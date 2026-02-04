@@ -26,7 +26,8 @@ echo 'Making bluetooth accessible without being root...'
 # Attempt to set capability but don't fail the build if not permitted (CI chroot may be unprivileged)
 if command -v setcap >/dev/null 2>&1; then
   # try best-effort; some CI runners disallow CAP_SETFCAP and will return non-zero
-  setcap cap_net_raw+eip /usr/bin/python3.7 || true
+  # Use python3 (Bullseye has Python 3.9, not 3.7)
+  setcap cap_net_raw+eip /usr/bin/python3 || true
 fi
 usermod -a -G bluetooth pi || true
 systemctl restart dbus || true
@@ -79,20 +80,17 @@ echo 'Removing default networking...'
 apt -y --autoremove purge ifupdown dhcpcd5 isc-dhcp-client isc-dhcp-common rsyslog avahi-daemon
 apt-mark hold ifupdown dhcpcd5 isc-dhcp-client isc-dhcp-common rsyslog raspberrypi-net-mods openresolv avahi-daemon libnss-mdns
 echo 'Installing required packages...'
-# Include python3-venv so `python3 -m venv` works inside the chroot
-apt -y install libnss-resolve hostapd dnsmasq dnsutils samba git python3 python3-pip python3-venv nginx openssh-server bluez
+# python3-venv removed - not needed for single-purpose device
+apt -y install libnss-resolve hostapd dnsmasq dnsutils samba git python3 python3-pip nginx openssh-server bluez
 
 echo 'Installing PicoClaw Server...'
 cd /
 git clone ${GIT_REPO} picobrew_picoclaw
 cd /picobrew_picoclaw
 
-# Use virtual environment for Python packages (required on Bookworm+)
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-deactivate
+# Install Python packages directly (single-purpose device, no venv needed)
+pip3 install --upgrade pip
+pip3 install -r requirements.txt
 cd /
 
 echo 'Setting up WiFi AP + Client...'
@@ -101,6 +99,7 @@ systemctl enable systemd-networkd.service systemd-resolved.service
 
 # Setup hostapd
 cat > /etc/hostapd/hostapd.conf <<EOF
+# interface is set via command line (-i ap@wlan0)
 driver=nl80211
 ssid=${AP_SSID}
 country_code=US
@@ -112,7 +111,7 @@ wpa_passphrase=${AP_PASS}
 wpa_key_mgmt=WPA-PSK
 wpa_pairwise=TKIP
 rsn_pairwise=CCMP
-bridge=br0
+# Note: bridge=br0 removed - using systemd-networkd for bridging with virtual AP interface
 EOF
 chmod 600 /etc/hostapd/hostapd.conf
 
@@ -313,19 +312,18 @@ cat >> /etc/rc.local <<EOF
 systemctl daemon-reload
 
 # toggle off WiFi power management on wireless interfaces (wlan0 and ap0)
-iw wlan0 set power_save off
-iw ap@wlan0 set power_save off
+iw wlan0 set power_save off || true
+iw ap@wlan0 set power_save off || true
 
 cd /picobrew_picoclaw
-source .venv/bin/activate
 
 if grep -q "update_boot:\s*[tT]rue" config.yaml
 then
   echo 'Updating PicoClaw Server...'
   git pull || true
   # install dependencies and start server
-  pip install -r requirements.txt
-  ./scripts/pi/post-git-update.sh
+  pip3 install -r requirements.txt
+  ./scripts/pi/post-git-update.sh || true
 fi
 
 source_sha=${GIT_SHA}
@@ -334,9 +332,12 @@ export IMG_RELEASE=${IMG_RELEASE}
 export IMG_VARIANT=${IMG_VARIANT}
 
 echo "Starting PicoClaw Server (image: \${rpi_image_version}; source: \${source_sha}) ..."
-python server.py 0.0.0.0 8080 &
+python3 server.py 0.0.0.0 8080 &
 
 exit 0
 EOF
+
+# Ensure rc-local.service is enabled so rc.local runs on boot
+systemctl enable rc-local.service || true
 
 echo 'Finished custom pi setup!'
