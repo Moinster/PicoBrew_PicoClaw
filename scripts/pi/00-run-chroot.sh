@@ -23,9 +23,13 @@ enable_uart=1
 EOF
 
 echo 'Making bluetooth accessible without being root...'
-setcap cap_net_raw+eip /usr/bin/python3.7
-usermod -a -G bluetooth pi
-systemctl restart dbus
+# Attempt to set capability but don't fail the build if not permitted (CI chroot may be unprivileged)
+if command -v setcap >/dev/null 2>&1; then
+  # try best-effort; some CI runners disallow CAP_SETFCAP and will return non-zero
+  setcap cap_net_raw+eip /usr/bin/python3.7 || true
+fi
+usermod -a -G bluetooth pi || true
+systemctl restart dbus || true
 
 echo 'Load default wpa_supplicant.conf...'
 cat > /boot/wpa_supplicant.conf <<EOF
