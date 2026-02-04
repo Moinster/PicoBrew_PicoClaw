@@ -88,9 +88,9 @@ This server includes a skill definition for AI agents like [OpenClaw](https://gi
 See [Agent Skills/SKILL.md](Agent%20Skills/SKILL.md) for complete API documentation and examples.
 
 ## Installation
-![GitHub tag (latest SemVer pre-release)](https://img.shields.io/github/v/tag/chiefwigms/picobrew_pico?include_prereleases&sort=semver)
+![GitHub tag (latest SemVer pre-release)](https://img.shields.io/github/v/tag/moinster/picobrew_picoclaw?include_prereleases&sort=semver)
 
-Refer to the [Releases Page](https://github.com/chiefwigms/picobrew_pico/releases) for steps to get up and running with your own Pico server with a Raspberry Pi device (recommended models include: Raspberry Pi Zero-W or Raspberry Pi 4).
+Refer to the [Releases Page](https://github.com/cmoinster/picobrew_picoClaw/releases) for steps to get up and running with your own Pico server with a Raspberry Pi device (recommended models include: Raspberry Pi Zero-W or Raspberry Pi 4).
 
 By default the hostname of the RaspberryPi device will be "raspberrypi" and is discoverable on your local network along with the "samba" (or network shares) for sessions and recipes. You can use these to view the files created by the server during interactions with the user and connected devices.
 
@@ -118,14 +118,6 @@ The build process uses [pi-gen](https://github.com/RPi-Distro/pi-gen) and includ
 - Auto-starting Flask server on boot
 - Samba network shares for recipes and sessions
 - Auto-update from git on boot (configurable)
-
-### GitHub Actions Build
-
-Use the "Build Raspberry Pi Image" workflow to automatically build images:
-1. Go to Actions → "Build Raspberry Pi Image"
-2. Click "Run workflow"
-3. Select variant (stable/latest) and release name
-4. Download the artifact when complete
 
 ### Debugging Issues
 
