@@ -1,13 +1,4 @@
 # picobrew_pico
-![GitHub Workflow Status (with branch)](https://img.shields.io/github/actions/workflow/status/chiefwigms/picobrew_pico/docker-image.yml)
-![GitHub contributors](https://img.shields.io/github/contributors/chiefwigms/picobrew_pico)
-![GitHub commit activity](https://img.shields.io/github/commit-activity/m/chiefwigms/picobrew_pico)
-
-![Docker Image Version (latest semver)](https://img.shields.io/docker/v/chiefwigms/picobrew_pico?logo=docker)
-![Docker Pulls](https://img.shields.io/docker/pulls/chiefwigms/picobrew_pico?logo=docker)
-![GitHub tag (latest SemVer pre-release)](https://img.shields.io/github/v/tag/chiefwigms/picobrew_pico?include_prereleases&sort=semver)
-![GitHub all releases](https://img.shields.io/github/downloads/chiefwigms/picobrew_pico/total)
-![GitHub release (by tag)](https://img.shields.io/github/downloads/chiefwigms/picobrew_pico/v0.0.1-beta6/total)
 
 The PicoBrew Pico server, now with claws!
 
