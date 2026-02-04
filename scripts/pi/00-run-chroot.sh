@@ -5,11 +5,14 @@ AP_IP="192.168.72.1"
 AP_SSID="PICOBREW"
 AP_PASS="PICOBREW"
 
-export IMG_NAME="PICOBREW_PICO"
-export IMG_RELEASE="beta6"
+export IMG_NAME="PICOBREW_PICOCLAW"
+export IMG_RELEASE="beta7"
 # export IMG_VARIANT="stable"
 export IMG_VARIANT="latest"
 export GIT_SHA='$(git rev-parse --short HEAD)'
+
+# GitHub repository to clone (override for forks)
+GIT_REPO="${GIT_REPO:-https://github.com/Moinster/PicoBrew_PicoClaw.git}"
 
 # Enable root login
 #sed -i 's/.*PermitRootLogin.*/PermitRootLogin yes/g' /etc/ssh/sshd_config
@@ -74,11 +77,17 @@ apt-mark hold ifupdown dhcpcd5 isc-dhcp-client isc-dhcp-common rsyslog raspberry
 echo 'Installing required packages...'
 apt -y install libnss-resolve hostapd dnsmasq dnsutils samba git python3 python3-pip nginx openssh-server bluez
 
-echo 'Installing Picobrew Server...'
+echo 'Installing PicoClaw Server...'
 cd /
-git clone https://github.com/chiefwigms/picobrew_pico.git
-cd /picobrew_pico
-pip3 install -r requirements.txt
+git clone ${GIT_REPO} picobrew_picoclaw
+cd /picobrew_picoclaw
+
+# Use virtual environment for Python packages (required on Bookworm+)
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+deactivate
 cd /
 
 echo 'Setting up WiFi AP + Client...'
@@ -243,7 +252,7 @@ openssl x509 \
 cat /certs/server.crt /certs/domain.crt > /certs/bundle.crt
 
 echo 'Setting up nginx for http and https...'
-ln -s /picobrew_pico/scripts/pi/picobrew.com.conf /etc/nginx/sites-available/picobrew.com.conf
+ln -s /picobrew_picoclaw/scripts/pi/picobrew.com.conf /etc/nginx/sites-available/picobrew.com.conf
 ln -s /etc/nginx/sites-available/picobrew.com.conf /etc/nginx/sites-enabled/picobrew.com.conf
 rm /etc/nginx/sites-enabled/default
 
@@ -260,7 +269,7 @@ dns proxy = no
 
 [App]
 guest ok = yes
-path = /picobrew_pico
+path = /picobrew_picoclaw
 available = yes
 browsable = yes
 public = yes
@@ -269,7 +278,7 @@ read only = no
 
 [Recipes]
 guest ok = yes
-path = /picobrew_pico/app/recipes
+path = /picobrew_picoclaw/app/recipes
 available = yes
 browsable = yes
 public = yes
@@ -278,7 +287,7 @@ read only = no
 
 [History]
 guest ok = yes
-path = /picobrew_pico/app/sessions
+path = /picobrew_picoclaw/app/sessions
 available = yes
 browsable = yes
 public = yes
@@ -302,13 +311,15 @@ systemctl daemon-reload
 iw wlan0 set power_save off
 iw ap@wlan0 set power_save off
 
-cd /picobrew_pico
+cd /picobrew_picoclaw
+source .venv/bin/activate
+
 if grep -q "update_boot:\s*[tT]rue" config.yaml
 then
-  echo 'Updating Picobrew Server...'
+  echo 'Updating PicoClaw Server...'
   git pull || true
   # install dependencies and start server
-  pip3 install -r requirements.txt
+  pip install -r requirements.txt
   ./scripts/pi/post-git-update.sh
 fi
 
@@ -317,8 +328,8 @@ rpi_image_version=${IMG_RELEASE}_${IMG_VARIANT}
 export IMG_RELEASE=${IMG_RELEASE}
 export IMG_VARIANT=${IMG_VARIANT}
 
-echo "Starting Picobrew Server (image: \${rpi_image_version}; source: \${source_sha}) ..."
-python3 server.py 0.0.0.0 8080 &
+echo "Starting PicoClaw Server (image: \${rpi_image_version}; source: \${source_sha}) ..."
+python server.py 0.0.0.0 8080 &
 
 exit 0
 EOF

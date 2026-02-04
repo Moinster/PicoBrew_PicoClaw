@@ -81,3 +81,48 @@ input[readonly].form-control-plaintext {
   font-size: 1em;
   color: #fff;
 }
+
+/* Mobile-friendly chart styles */
+.chart-container {
+  width: 100%;
+  min-height: 280px;
+  max-height: 500px;
+}
+
+/* Mobile breakpoint adjustments */
+@media (max-width: 768px) {
+  .chart-container {
+    height: 45vh;
+    min-height: 250px;
+  }
+  
+  /* Make card headers more tappable on mobile */
+  .card-header > a {
+    padding: 0.75rem 0;
+    font-size: 0.9rem;
+  }
+  
+  /* Improve session info layout on mobile */
+  .card-body .row .col-sm {
+    margin-bottom: 0.5rem;
+  }
+  
+  /* Reduce padding on mobile for more chart space */
+  .card-body {
+    padding: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .chart-container {
+    height: 40vh;
+    min-height: 220px;
+  }
+  
+  /* Stack session buttons vertically on very small screens */
+  .card-header .btn {
+    margin-bottom: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+  }
+}

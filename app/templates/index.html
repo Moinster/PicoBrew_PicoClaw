@@ -87,7 +87,7 @@
             {% endif %}
           </div>
           <div class="row">&nbsp;</div>
-          <div id="{{chart_id}}" style="min-width: 320px; height: 400px; margin: 0 auto"></div>
+          <div id="{{chart_id}}" class="chart-container" style="width: 100%; min-height: 300px; height: 50vh; max-height: 500px;"></div>
           <script>var graph_data={{brew_session.graph|tojson}};</script>
           <script src="/static/js/brew_graph_socketio.js"></script>
         </div>
@@ -110,7 +110,7 @@
           </span>
           {% if ferm_session.alias is defined and ferm_session.alias|length %}{{ferm_session.alias}}{% else %}{{chart_id}}{% endif %}
           <button class="fermentation-start {{display_start}} btn btn-sm btn-success float-right mr-5" type="button" id="bstart_{{ferm_session.uid}}"
-              onclick="event.stopPropagation();event.preventDefault();start_monitoring('ferm', '{{ferm_session.uid}}');">
+              onclick="event.stopPropagation();event.preventDefault();showFermStartModal('{{ferm_session.uid}}');">
               <i class="fas fa-play-circle"></i> Start Fermentation
           </button>
           <button class="fermentation-stop {{display_stop}} btn btn-sm btn-danger float-right mr-5" type="button" id="bstop_{{ferm_session.uid}}"
@@ -132,9 +132,43 @@
               <div>{{ferm_session.date.strftime('%A, %b %e %Y %H:%M:%S')}}</div>
               {% endif %}
             </div>
+            <div class="col-sm">
+              <div class="text-white-50">Target ABV</div>
+              <div id="target_abv_{{ferm_session.uid}}">{% if ferm_session.target_abv %}{{ferm_session.target_abv}}%{% else %}<span class="text-muted">Not set</span>{% endif %}</div>
+            </div>
+          </div>
+          <!-- Fermentation Status Panel -->
+          <div class="row mt-3" id="ferm_status_panel_{{ferm_session.uid}}" {% if not ferm_session.active %}style="display:none;"{% endif %}>
+            <div class="col-12">
+              <div class="card bg-secondary">
+                <div class="card-body py-2">
+                  <div class="row align-items-center">
+                    <div class="col-md-3">
+                      <small class="text-white-50">Progress</small>
+                      <div class="progress" style="height: 20px;">
+                        <div class="progress-bar bg-success" role="progressbar" id="ferm_progress_{{ferm_session.uid}}" 
+                             style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                      </div>
+                    </div>
+                    <div class="col-md-3">
+                      <small class="text-white-50">Est. Completion</small>
+                      <div id="ferm_est_completion_{{ferm_session.uid}}">Calculating...</div>
+                    </div>
+                    <div class="col-md-3">
+                      <small class="text-white-50">Est. Days</small>
+                      <div id="ferm_est_days_{{ferm_session.uid}}">--</div>
+                    </div>
+                    <div class="col-md-3">
+                      <small class="text-white-50">Status</small>
+                      <div id="ferm_recommendation_{{ferm_session.uid}}">Waiting for data...</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="row">&nbsp;</div>
-          <div id="{{chart_id}}" style="min-width: 320px; height: 400px; margin: 0 auto"></div>
+          <div id="{{chart_id}}" class="chart-container" style="width: 100%; min-height: 300px; height: 50vh; max-height: 500px;"></div>
           <script>var graph_data={{ferm_session.graph|tojson}};</script>
           <script src="/static/js/ferm_graph_socketio.js"></script>
         </div>
@@ -185,7 +219,7 @@
             </div>
           </div>
           <div class="row">&nbsp;</div>
-          <div id="{{chart_id}}" style="min-width: 320px; height: 400px; margin: 0 auto"></div>
+          <div id="{{chart_id}}" class="chart-container" style="width: 100%; min-height: 300px; height: 50vh; max-height: 500px;"></div>
           <script>var graph_data={{still_session.graph|tojson}};</script>
           <script src="/static/js/still_graph_socketio.js"></script>
           
@@ -254,7 +288,7 @@
             </div>
           </div>
           <div class="row">&nbsp;</div>
-          <div id="{{chart_id}}" style="min-width: 320px; height: 400px; margin: 0 auto"></div>
+          <div id="{{chart_id}}" class="chart-container" style="width: 100%; min-height: 300px; height: 50vh; max-height: 500px;"></div>
           <script>var graph_data={{iSpindel_session.graph|tojson}};</script>
           <script src="/static/js/iSpindel_graph_socketio.js"></script>
         </div>
@@ -310,12 +344,123 @@
             </div>
           </div>
           <div class="row">&nbsp;</div>
-          <div id="{{chart_id}}" style="min-width: 320px; height: 400px; margin: 0 auto"></div>
+          <div id="{{chart_id}}" class="chart-container" style="width: 100%; min-height: 300px; height: 50vh; max-height: 500px;"></div>
           <script>var graph_data={{tilt_session.graph|tojson}};</script>
           <script src="/static/js/tilt_graph_socketio.js"></script>
         </div>
       </div>
     </div>
     {% endfor %}
+  </div>
+
+  <!-- Fermentation Start Modal -->
+  <div class="modal fade" id="fermStartModal" tabindex="-1" role="dialog" aria-labelledby="fermStartModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content bg-dark text-white">
+        <div class="modal-header">
+          <h5 class="modal-title" id="fermStartModalLabel"><i class="fas fa-flask"></i> Start Fermentation</h5>
+          <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="ferm_modal_uid" value="">
+          
+          <div class="form-group">
+            <label for="ferm_target_abv">Target ABV (%)</label>
+            <input type="number" class="form-control bg-secondary text-white" id="ferm_target_abv" 
+                   placeholder="e.g., 5.5" step="0.1" min="1" max="20" value="5.0">
+            <small class="form-text text-muted">
+              Enter the expected ABV of your beer. This is used to estimate fermentation time.
+            </small>
+          </div>
+          
+          <div class="form-group">
+            <label for="ferm_target_pressure">Target Pressure (PSI)</label>
+            <input type="number" class="form-control bg-secondary text-white" id="ferm_target_pressure" 
+                   placeholder="e.g., 5" step="1" min="0" max="30" value="5">
+            <small class="form-text text-muted">
+              Fermentation pressure. Higher pressure = longer fermentation time.
+            </small>
+          </div>
+          
+          <div class="form-group">
+            <div class="custom-control custom-switch">
+              <input type="checkbox" class="custom-control-input" id="ferm_auto_complete" checked>
+              <label class="custom-control-label" for="ferm_auto_complete">Auto-complete when done</label>
+            </div>
+            <small class="form-text text-muted">
+              Automatically stop fermentation when estimated time is reached.
+            </small>
+          </div>
+          
+          <div class="form-group">
+            <div class="custom-control custom-switch">
+              <input type="checkbox" class="custom-control-input" id="ferm_conservative" checked>
+              <label class="custom-control-label" for="ferm_conservative">Use conservative estimate</label>
+            </div>
+            <small class="form-text text-muted">
+              Use the longer time estimate (recommended for best results).
+            </small>
+          </div>
+
+          <div class="card bg-secondary mt-3">
+            <div class="card-body py-2">
+              <h6 class="card-title mb-1">Estimated Fermentation Time</h6>
+              <p id="ferm_time_estimate" class="mb-0">Set ABV to see estimate</p>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-success" onclick="startFermentationWithParams()">
+            <i class="fas fa-play-circle"></i> Start Fermentation
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fermentation Complete Modal -->
+  <div class="modal fade" id="fermCompleteModal" tabindex="-1" role="dialog" aria-labelledby="fermCompleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content bg-dark text-white">
+        <div class="modal-header bg-success">
+          <h5 class="modal-title" id="fermCompleteModalLabel"><i class="fas fa-check-circle"></i> Fermentation Complete!</h5>
+          <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="text-center mb-4">
+            <i class="fas fa-beer fa-4x text-warning"></i>
+          </div>
+          
+          <div class="alert alert-success">
+            <strong>Device:</strong> <span id="fermCompleteUid"></span><br>
+            <strong>Reason:</strong> <span id="fermCompleteReason"></span>
+          </div>
+          
+          <h6>Fermentation Summary</h6>
+          <div id="fermCompleteDetails" class="bg-secondary p-3 rounded">
+            <!-- Details will be populated by JavaScript -->
+          </div>
+          
+          <div class="mt-3">
+            <p class="text-muted mb-0">
+              <i class="fas fa-info-circle"></i> 
+              Your fermentation has automatically completed based on the estimated time. 
+              Consider taking a gravity reading to confirm fermentation is complete before packaging.
+            </p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+          <a href="/session_history?type=ferm" class="btn btn-primary">
+            <i class="fas fa-history"></i> View Session History
+          </a>
+        </div>
+      </div>
+    </div>
   </div>
 {% endblock %}

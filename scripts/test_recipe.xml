@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RECIPES>
+  <RECIPE>
+    <NAME>American IPA</NAME>
+    <TYPE>All Grain</TYPE>
+    <BREWER>Test Brewer</BREWER>
+    <BATCH_SIZE>19.0</BATCH_SIZE>
+    <BOIL_SIZE>23.0</BOIL_SIZE>
+    <BOIL_TIME>60</BOIL_TIME>
+    <EFFICIENCY>72</EFFICIENCY>
+    <OG>1.065</OG>
+    <FG>1.012</FG>
+    <IBU>65</IBU>
+    <HOPS>
+      <HOP>
+        <NAME>Centennial</NAME>
+        <AMOUNT>0.03</AMOUNT>
+        <TIME>60</TIME>
+        <USE>Boil</USE>
+        <ALPHA>10.0</ALPHA>
+      </HOP>
+      <HOP>
+        <NAME>Cascade</NAME>
+        <AMOUNT>0.02</AMOUNT>
+        <TIME>15</TIME>
+        <USE>Boil</USE>
+        <ALPHA>6.0</ALPHA>
+      </HOP>
+      <HOP>
+        <NAME>Citra</NAME>
+        <AMOUNT>0.025</AMOUNT>
+        <TIME>5</TIME>
+        <USE>Boil</USE>
+        <ALPHA>12.0</ALPHA>
+      </HOP>
+    </HOPS>
+    <FERMENTABLES>
+      <FERMENTABLE>
+        <NAME>Pale Malt (2-row)</NAME>
+        <AMOUNT>5.0</AMOUNT>
+        <TYPE>Grain</TYPE>
+        <COLOR>2</COLOR>
+      </FERMENTABLE>
+      <FERMENTABLE>
+        <NAME>Crystal 40L</NAME>
+        <AMOUNT>0.5</AMOUNT>
+        <TYPE>Grain</TYPE>
+        <COLOR>40</COLOR>
+      </FERMENTABLE>
+    </FERMENTABLES>
+    <YEASTS>
+      <YEAST>
+        <NAME>US-05</NAME>
+        <TYPE>Ale</TYPE>
+        <FORM>Dry</FORM>
+        <LABORATORY>Fermentis</LABORATORY>
+        <ATTENUATION>78</ATTENUATION>
+      </YEAST>
+    </YEASTS>
+    <MASH>
+      <MASH_STEPS>
+        <MASH_STEP>
+          <NAME>Sacch Rest</NAME>
+          <TYPE>Infusion</TYPE>
+          <STEP_TEMP>67</STEP_TEMP>
+          <STEP_TIME>60</STEP_TIME>
+        </MASH_STEP>
+      </MASH_STEPS>
+    </MASH>
+    <STYLE>
+      <NAME>American IPA</NAME>
+      <CATEGORY>IPA</CATEGORY>
+      <OG_MIN>1.056</OG_MIN>
+      <OG_MAX>1.070</OG_MAX>
+      <FG_MIN>1.008</FG_MIN>
+      <FG_MAX>1.014</FG_MAX>
+      <IBU_MIN>40</IBU_MIN>
+      <IBU_MAX>70</IBU_MAX>
+    </STYLE>
+    <NOTES>A classic American IPA with citrus and pine hop character.</NOTES>
+  </RECIPE>
+</RECIPES>

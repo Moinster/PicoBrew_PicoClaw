@@ -153,6 +153,11 @@ class PicoFermSession:
         self.voltage = '-'
         self.start_time = None
         self.data = []
+        # Fermentation completion tracking
+        self.target_abv = None          # User-specified target ABV (%)
+        self.target_pressure_psi = 5.0  # Target fermentation pressure (PSI)
+        self.auto_complete = True       # Auto-complete when estimated time reached
+        self.use_conservative = True    # Use conservative (longer) time estimate
 
     def cleanup(self):
         if self.file and self.filepath:
@@ -164,6 +169,26 @@ class PicoFermSession:
         self.voltage = '-'
         self.start_time = None
         self.data = []
+        self.target_abv = None
+        self.target_pressure_psi = 5.0
+        self.auto_complete = True
+        self.use_conservative = True
+
+    def get_fermentation_status(self):
+        """Get current fermentation status and estimates."""
+        from .fermentation_calculator import get_fermentation_status
+        return get_fermentation_status(
+            self.start_time,
+            self.target_abv,
+            self.data
+        )
+
+    def should_auto_complete(self):
+        """Check if fermentation should auto-complete based on time estimates."""
+        if not self.auto_complete or self.target_abv is None:
+            return False
+        status = self.get_fermentation_status()
+        return status.get('should_complete', False)
 
 
 class iSpindelSession:

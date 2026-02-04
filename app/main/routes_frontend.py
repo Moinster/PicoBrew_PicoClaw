@@ -3,7 +3,7 @@ import os
 import uuid
 from datetime import timedelta
 from markupsafe import escape
-from flask import current_app, make_response, request, send_file, render_template
+from flask import current_app, make_response, request, send_file, render_template, jsonify
 from pathlib import Path
 from ruamel.yaml import YAML
 from webargs import fields
@@ -63,9 +63,9 @@ def _session_type_history(stype):
     try:
         sessions = _paginated_sessions(stype, None, offset, limit)
     except Exception as e:
-        current_app.logger.error(f'failed to load brew sessions: {e}')
-        if is_ajax(request):  # return error to loader, else return empty session list
-            return f'unable to load more {stype.value} sessions', 404
+        current_app.logger.debug(f'pagination end for {stype.value} sessions: {e}')
+        if is_ajax(request):  # return end-of-data to loader, else return empty session list
+            return f'no more {stype.value} sessions', 404
 
     if is_ajax(request):
         return render_template('_session_list.html', session_type=stype, sessions=sessions)
@@ -103,7 +103,7 @@ def _zymatic_recipes():
     global zymatic_recipes, invalid_recipes
     zymatic_recipes = load_zymatic_recipes()
     recipes_dict = [json.loads(json.dumps(recipe, default=lambda r: r.__dict__)) for recipe in zymatic_recipes]
-    return render_template_with_defaults('zymatic_recipes.html', recipes=recipes_dict, invalid=invalid_recipes.get(MachineType.ZYMATIC, set()))
+    return render_template_with_defaults('zymatic_recipes.html', recipes=recipes_dict, invalid=invalid_recipes.get(MachineType.ZYMATIC, set()), session_type='zymatic_recipe')
 
 
 @main.route('/new_zymatic_recipe', methods=['GET', 'POST'])
@@ -196,7 +196,7 @@ def _zseries_recipes():
     global zseries_recipes, invalid_recipes
     zseries_recipes = load_zseries_recipes()
     recipes_dict = [json.loads(json.dumps(recipe, default=lambda r: r.__dict__)) for recipe in zseries_recipes]
-    return render_template_with_defaults('zseries_recipes.html', recipes=recipes_dict, invalid=invalid_recipes.get(MachineType.ZSERIES, set()))
+    return render_template_with_defaults('zseries_recipes.html', recipes=recipes_dict, invalid=invalid_recipes.get(MachineType.ZSERIES, set()), session_type='zseries_recipe')
 
 
 @main.route('/new_zseries_recipe')
@@ -448,30 +448,48 @@ def add_invalid_recipe(deviceType, file):
 
 @main.route('/delete_file', methods=['POST'])
 def delete_file():
-    body = request.get_json()
-    filename = body['filename']
-    if body['type'] == "recipe":
-        filepath = Path(filename)
-        if filepath:
-            os.remove(filename)
+    body = request.get_json() or {}
+    filename = body.get('filename')
+    ftype = body.get('type')
+
+    if not filename or not ftype:
+        current_app.logger.error("ERROR: delete_file called with missing filename or type: %s", body)
+        return jsonify({'success': False, 'error': 'Missing filename or type'}), 400
+
+    filepath = Path(filename)
+    # Helper to attempt remove and handle exceptions
+    def _remove_file(p: Path):
+        try:
+            if p.exists():
+                os.remove(p)
+                return True, None
+            else:
+                return False, 'File does not exist'
+        except Exception as e:
+            return False, str(e)
+
+    if ftype == 'recipe':
+        ok, err = _remove_file(filepath)
+        if ok:
             for device in invalid_recipes:
                 if filepath in invalid_recipes[device]:
-                    invalid_recipes[device].remove(Path(filename))
-            return '', 204
-        current_app.logger.error("ERROR: failed to delete recipe file {}".format(filename))
-        return "Delete Filename: Failed to find recipe file {}".format(filename), 418
-    elif body['type'] in ['brew', 'ferm', 'iSpindel', 'tilt', 'still']:
-        filepath = Path(filename)
-        if filepath:
-            os.remove(filename)
-            if body['type'] in invalid_sessions and filepath in invalid_sessions[body['type']]:
-                invalid_sessions[body['type']].remove(Path(filename))
-            return '', 204
-        current_app.logger.error("ERROR: failed to delete {} session file {}".format(body['type'], filename))
-        return "Delete Filename: Failed to find {} session file".format(body['type'], filename), 418
+                    invalid_recipes[device].remove(filepath)
+            return jsonify({'success': True}), 200
+        current_app.logger.error("ERROR: failed to delete recipe file %s: %s", filename, err)
+        return jsonify({'success': False, 'error': f'Delete failed: {err}'}), 404
+
+    elif ftype in ['brew', 'ferm', 'iSpindel', 'tilt', 'still']:
+        ok, err = _remove_file(filepath)
+        if ok:
+            if ftype in invalid_sessions and filepath in invalid_sessions[ftype]:
+                invalid_sessions[ftype].remove(filepath)
+            return jsonify({'success': True}), 200
+        current_app.logger.error("ERROR: failed to delete %s session file %s: %s", ftype, filename, err)
+        return jsonify({'success': False, 'error': f'Delete failed: {err}'}), 404
+
     else:
-        current_app.logger.error("ERROR: failed to delete {} as the file type {} was not supported".format(filename, body['type']))
-    return 'Delete Filename: Unsupported file type specified {}'.format(body['type']), 418
+        current_app.logger.error("ERROR: unsupported file type for delete_file: %s", ftype)
+        return jsonify({'success': False, 'error': f'Unsupported file type {ftype}'}), 400
 
 
 @main.route('/pico_recipes')
@@ -479,7 +497,7 @@ def _pico_recipes():
     global pico_recipes, invalid_recipes
     pico_recipes = load_pico_recipes()
     recipes_dict = [json.loads(json.dumps(recipe, default=lambda r: r.__dict__)) for recipe in pico_recipes]
-    return render_template_with_defaults('pico_recipes.html', recipes=recipes_dict, invalid=invalid_recipes.get(MachineType.PICOBREW, set()))
+    return render_template_with_defaults('pico_recipes.html', recipes=recipes_dict, invalid=invalid_recipes.get(MachineType.PICOBREW, set()), session_type='pico_recipe')
 
 
 @main.route('/new_pico_recipe', methods=['GET', 'POST'])
@@ -681,12 +699,17 @@ def parse_ferm_session(file):
 def load_active_ferm_sessions():
     ferm_sessions = []
     for uid in active_ferm_sessions:
-        ferm_sessions.append({'alias': active_ferm_sessions[uid].alias,
+        session = active_ferm_sessions[uid]
+        ferm_sessions.append({'alias': session.alias,
                               'uid': uid,
-                              'active': active_ferm_sessions[uid].active,
-                              'date': active_ferm_sessions[uid].start_time or None,
-                              'graph': get_ferm_graph_data(uid, active_ferm_sessions[uid].voltage,
-                                                           active_ferm_sessions[uid].data)})
+                              'active': session.active,
+                              'date': session.start_time or None,
+                              'target_abv': session.target_abv,
+                              'target_pressure_psi': session.target_pressure_psi,
+                              'auto_complete': session.auto_complete,
+                              'fermentation_status': session.get_fermentation_status(),
+                              'graph': get_ferm_graph_data(uid, session.voltage,
+                                                           session.data)})
     return ferm_sessions
 
 

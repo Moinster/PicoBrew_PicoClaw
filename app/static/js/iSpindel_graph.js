@@ -8,7 +8,13 @@ function initiatizeChart(graph_data) {
   Highcharts.chart(graph_data.chart_id, {
     chart: {
       type: 'spline',
-      zoomType: 'xy'
+      zoomType: 'xy',
+      panning: {
+        enabled: true,
+        type: 'xy'
+      },
+      panKey: 'shift',
+      pinchType: 'xy'
     },
 
     credits: {
@@ -20,9 +26,24 @@ function initiatizeChart(graph_data) {
     plotOptions: {
       spline: {
         marker: {
-          enabled: true
+          enabled: true,
+          radius: 3
+        }
+      },
+      series: {
+        states: {
+          inactive: {
+            opacity: 1
+          }
         }
       }
+    },
+
+    legend: {
+      itemStyle: {
+        fontSize: '12px'
+      },
+      itemMarginBottom: 5
     },
 
     title: graph_data.title,
@@ -106,5 +127,63 @@ function initiatizeChart(graph_data) {
     }],
 
     series: graph_data.series,
+
+    responsive: {
+      rules: [{
+        condition: {
+          maxWidth: 600
+        },
+        chartOptions: {
+          chart: {
+            spacingLeft: 5,
+            spacingRight: 5
+          },
+          legend: {
+            layout: 'horizontal',
+            align: 'center',
+            verticalAlign: 'bottom',
+            itemStyle: {
+              fontSize: '10px'
+            }
+          },
+          xAxis: {
+            title: {
+              text: null
+            },
+            labels: {
+              style: {
+                fontSize: '10px'
+              }
+            }
+          },
+          yAxis: [{
+            title: {
+              text: null
+            },
+            labels: {
+              style: {
+                fontSize: '10px'
+              }
+            }
+          }, {
+            title: {
+              text: null
+            },
+            labels: {
+              style: {
+                fontSize: '10px'
+              }
+            }
+          }],
+          plotOptions: {
+            spline: {
+              marker: {
+                radius: 2
+              }
+            }
+          }
+        }
+      }]
+    }
   });
 }

@@ -9,8 +9,10 @@
 ![GitHub all releases](https://img.shields.io/github/downloads/chiefwigms/picobrew_pico/total)
 ![GitHub release (by tag)](https://img.shields.io/github/downloads/chiefwigms/picobrew_pico/v0.0.1-beta6/total)
 
-Allows for full control of the PicoBrew Pico S/C/Pro & Zymatic models.  Shout out to [@hotzenklotz](https://github.com/hotzenklotz/picobrew-server), Brian Moineau for PicoFerm API, @tmack8001 for Z series support & updates.  
-[Demo Server](http://ec2-3-136-112-93.us-east-2.compute.amazonaws.com/)
+The PicoBrew Pico server, now with claws!
+
+This project allows for full control of the PicoBrew Pico S/C/Pro & Zymatic models, plus new recipe building capabilities and an AI Agent interface.  Shout out to [@chiefwigms] (https://github.com/chiefwigms/picobrew_pico) [@hotzenklotz](https://github.com/hotzenklotz/picobrew-server), @tmack8001 for Z series support & updates.  
+
 
 ## Supported Devices:
 * Hot Side
@@ -25,7 +27,7 @@ Allows for full control of the PicoBrew Pico S/C/Pro & Zymatic models.  Shout ou
       * ZSeries (full heat sensor logging - included and supported within Z firmware)
       * Zymatic (no native support for controlling the PicoStill - limitation of firmware)
 * Cold Side (Fermentation)
-  * PicoFerm (Beta - Currently terminates fermentation after 14 days)
+  * PicoFerm: fully featured
   * iSpindel: full session graphing
   * Tilt: full session graphing
 
@@ -41,6 +43,58 @@ Allows for full control of the PicoBrew Pico S/C/Pro & Zymatic models.  Shout ou
 * Manual Recipe Editing
   * **Note** The table for adding/removing/editing recipe steps has several validation checks in it, but there is always the possibility of ruining your Pico.  
   * *For Pico S/C/Pro Only*: DO NOT EDIT or MOVE Rows 1-3 (Preparing to Brew/Heating/Dough In).  Drain times should all be 0 except for Mash Out (2 minutes) and the last hop addition (5 minutes) (for example, if you only have Hops 1 & 2, set the drain time on Hops 2 to 5, and remove the Hops 3 and 4 rows)
+* **Recipe Crafter** (NEW)
+  * Built-in recipe templates (American IPA, Stout, Wheat Beer, etc.)
+  * BeerXML import - import recipes from Brewer's Friend, Brewfather, BeerSmith, and other sites that support beerXML
+  * Custom recipe creation with mash schedules and hop additions
+  * Automatic conversion to Pico, Zymatic, or Z-Series format
+* **Agent API** (NEW - BETA)
+  * JSON API endpoints for AI agents and automation
+  * Monitor active brew/fermentation sessions programmatically
+  * Create and save recipes via REST API
+  * Compatible with OpenClaw, Claude, and other AI assistants
+
+## AI Agent Integration (OpenClaw & Others)
+
+This server includes a skill definition for AI agents like [OpenClaw](https://github.com/openclaw/openclaw) that enables natural language control of your brewing system.
+
+### What Agents Can Do
+* 🍺 Check server status and active sessions
+* 📊 Monitor fermentation progress (PicoFerm, Tilt, iSpindel)
+* 📋 List and search recipes
+* ✨ Create new recipes from templates or custom parameters
+* 📤 Upload recipe files directly to your device library
+
+### Setup for OpenClaw
+
+1. Copy the skill file to your OpenClaw skills directory and review for confg.json setup:
+   ```powershell
+   # Windows
+   Copy-Item -Path "Agent Skills\SKILL.md" -Destination "$env:USERPROFILE\.openclaw\skills\picobrew-server\SKILL.md"
+   
+   # Linux/Mac
+   cp "Agent Skills/SKILL.md" ~/.openclaw/skills/picobrew-server/SKILL.md
+   ```
+
+2. The agent will automatically discover the skill and can interact with your PicoBrew server.
+
+### Agent API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /API/Agent/status` | Server status and active session counts |
+| `GET /API/Agent/devices` | List all connected devices |
+| `GET /API/Agent/recipePaths` | Get recipe save paths and JSON structure examples |
+| `POST /API/Agent/uploadRecipe` | Upload recipe file (recommended for agents) |
+| `GET /API/Agent/ferm/active` | Active fermentation sessions |
+| `GET /API/Agent/brew/active` | Active brew sessions |
+| `GET /API/Agent/tilt/active` | Active Tilt hydrometer sessions |
+| `GET /API/Agent/recipes/{device}` | List recipes for device type |
+| `GET /API/RecipeCrafter/getTemplates` | Available recipe templates |
+| `GET /API/RecipeCrafter/createRecipe?...` | Create custom recipe with URL params |
+| `GET /API/RecipeCrafter/createFromTemplate?...` | Create recipe from template |
+
+See [Agent Skills/SKILL.md](Agent%20Skills/SKILL.md) for complete API documentation and examples.
 
 ## Installation
 ![GitHub tag (latest SemVer pre-release)](https://img.shields.io/github/v/tag/chiefwigms/picobrew_pico?include_prereleases&sort=semver)
@@ -48,6 +102,39 @@ Allows for full control of the PicoBrew Pico S/C/Pro & Zymatic models.  Shout ou
 Refer to the [Releases Page](https://github.com/chiefwigms/picobrew_pico/releases) for steps to get up and running with your own Pico server with a Raspberry Pi device (recommended models include: Raspberry Pi Zero-W or Raspberry Pi 4).
 
 By default the hostname of the RaspberryPi device will be "raspberrypi" and is discoverable on your local network along with the "samba" (or network shares) for sessions and recipes. You can use these to view the files created by the server during interactions with the user and connected devices.
+
+## Raspberry Pi Deployment
+
+### Quick Start (Pre-Built Image)
+
+1. Download the latest image from the [Releases page](https://github.com/Moinster/PicoBrew_PicoClaw/releases)
+2. Extract the `.img` file from the zip
+3. Flash to SD card using [Raspberry Pi Imager](https://www.raspberrypi.com/software/) or [Balena Etcher](https://www.balena.io/etcher/)
+4. (Optional) Edit `wpa_supplicant.conf` on the boot partition with your WiFi credentials
+5. Insert SD card and power on
+6. Wait 2-3 minutes for first boot
+7. Connect your PicoBrew device to WiFi network `PICOBREW` (password: `PICOBREW`)
+8. Access the server at http://picobrew.com or http://192.168.72.1
+
+### Build Your Own Image
+
+See [scripts/pi/README.md](scripts/pi/README.md) for instructions on building a custom Raspberry Pi image.
+
+The build process uses [pi-gen](https://github.com/RPi-Distro/pi-gen) and includes:
+- WiFi Access Point that PicoBrew devices connect to
+- DNS redirection so `picobrew.com` resolves to the Pi
+- nginx reverse proxy with self-signed SSL
+- Auto-starting Flask server on boot
+- Samba network shares for recipes and sessions
+- Auto-update from git on boot (configurable)
+
+### GitHub Actions Build
+
+Use the "Build Raspberry Pi Image" workflow to automatically build images:
+1. Go to Actions → "Build Raspberry Pi Image"
+2. Click "Run workflow"
+3. Select variant (stable/latest) and release name
+4. Download the artifact when complete
 
 ### Debugging Issues
 

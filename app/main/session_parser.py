@@ -684,10 +684,10 @@ def sampling(selection, offset=0, limit=None):
 def _paginate_sessions(sessions, offset=0, limit=None):
     sessions = sampling(sessions, offset, limit)
 
-    # if pagination request and no sessions found return error
+    # if pagination request and no sessions found, signal end of data
     if (offset != 0 and len(sessions) == 0):
-        msg = "unable to paginate sessions to offset={}&limit={}".format(offset, limit)
-        current_app.logger.error(msg)
+        msg = "no more sessions at offset={}&limit={}".format(offset, limit)
+        current_app.logger.debug(msg)
         raise Exception(msg)
 
     return sessions

@@ -1,0 +1,776 @@
+{% extends "base.html" %}
+{% block content %}
+<script src="/static/js/convert_units.js"></script>
+<style>
+  .crafter-section {
+    background: #2a2a2a;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .crafter-section h4 {
+    color: #00d4ff;
+    border-bottom: 1px solid #444;
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+  }
+  .step-card {
+    background: #333;
+    border-radius: 6px;
+    padding: 10px;
+    margin-bottom: 10px;
+  }
+  .hop-badge {
+    background: #28a745;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+  }
+  .mash-badge {
+    background: #ffc107;
+    color: #333;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+  }
+  .template-card {
+    background: #383838;
+    border: 1px solid #555;
+    border-radius: 8px;
+    padding: 15px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .template-card:hover {
+    border-color: #00d4ff;
+    transform: translateY(-2px);
+  }
+  .template-card.selected {
+    border-color: #00d4ff;
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+  }
+  .drop-zone {
+    border: 2px dashed #555;
+    border-radius: 8px;
+    padding: 40px;
+    text-align: center;
+    transition: all 0.2s;
+  }
+  .drop-zone.dragover {
+    border-color: #00d4ff;
+    background: rgba(0, 212, 255, 0.1);
+  }
+  .recipe-preview {
+    max-height: 400px;
+    overflow-y: auto;
+  }
+  .device-btn {
+    min-width: 100px;
+  }
+  .device-btn.active {
+    background: #00d4ff !important;
+    border-color: #00d4ff !important;
+    color: #000 !important;
+  }
+  /* Improve text readability */
+  .crafter-section,
+  .crafter-section p,
+  .crafter-section li,
+  .crafter-section label {
+    color: #e0e0e0;
+  }
+  .crafter-section h5,
+  .crafter-section h6 {
+    color: #00d4ff;
+  }
+  #templateDetails,
+  #templateContent {
+    color: #e0e0e0;
+  }
+  #templateContent ul {
+    color: #fff;
+  }
+  #templateContent li {
+    color: #e0e0e0;
+    margin-bottom: 4px;
+  }
+  .template-card h5 {
+    color: #fff;
+  }
+  .template-card small {
+    color: #aaa;
+  }
+  .form-control {
+    background-color: #444;
+    border-color: #555;
+    color: #fff;
+  }
+  .form-control:focus {
+    background-color: #4a4a4a;
+    border-color: #00d4ff;
+    color: #fff;
+  }
+  .form-control::placeholder {
+    color: #888;
+  }
+</style>
+
+<div class="container-fluid">
+  <h2 class="mb-4"><i class="fas fa-flask mr-2"></i>Recipe Crafter</h2>
+  
+  <!-- Device Type Selection -->
+  <div class="crafter-section">
+    <h4><i class="fas fa-microchip mr-2"></i>Target Device</h4>
+    <div class="btn-group" role="group">
+      <button type="button" class="btn btn-outline-light device-btn active" data-device="pico">
+        <i class="fas fa-beer mr-1"></i> Pico
+      </button>
+      <button type="button" class="btn btn-outline-light device-btn" data-device="zymatic">
+        <i class="fas fa-industry mr-1"></i> Zymatic
+      </button>
+      <button type="button" class="btn btn-outline-light device-btn" data-device="zseries">
+        <i class="fas fa-cogs mr-1"></i> Z-Series
+      </button>
+    </div>
+    <input type="hidden" id="selected_device" value="pico">
+  </div>
+
+  <!-- Tabs for different methods -->
+  <ul class="nav nav-tabs" id="crafterTabs" role="tablist">
+    <li class="nav-item">
+      <a class="nav-link active" id="import-tab" data-toggle="tab" href="#import" role="tab">
+        <i class="fas fa-file-import mr-1"></i> Import BeerXML
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" id="template-tab" data-toggle="tab" href="#template" role="tab">
+        <i class="fas fa-book mr-1"></i> Templates
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" id="manual-tab" data-toggle="tab" href="#manual" role="tab">
+        <i class="fas fa-edit mr-1"></i> Manual Entry
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" id="sources-tab" data-toggle="tab" href="#sources" role="tab">
+        <i class="fas fa-cloud-download-alt mr-1"></i> Recipe Sources
+      </a>
+    </li>
+  </ul>
+
+  <div class="tab-content" id="crafterTabContent">
+    <!-- Import BeerXML Tab -->
+    <div class="tab-pane fade show active" id="import" role="tabpanel">
+      <div class="crafter-section">
+        <h4><i class="fas fa-file-code mr-2"></i>Import BeerXML File</h4>
+        <p class="text-muted">
+          BeerXML is the standard format used by BeerSmith, Brewfather, Brewer's Friend, and many other brewing apps.
+          Export your recipe from any of these apps and import it here.
+        </p>
+        
+        <div class="drop-zone" id="dropZone">
+          <i class="fas fa-cloud-upload-alt fa-3x mb-3 text-muted"></i>
+          <h5>Drag & Drop BeerXML file here</h5>
+          <p class="text-muted">or click to browse</p>
+          <input type="file" id="beerxmlFile" accept=".xml,.beerxml" style="display: none;">
+        </div>
+        
+        <div id="importPreview" class="mt-4" style="display: none;">
+          <h5><i class="fas fa-eye mr-2"></i>Recipe Preview</h5>
+          <div id="previewContent" class="recipe-preview"></div>
+          <div class="mt-3">
+            <button class="btn btn-success" id="btnImportSave">
+              <i class="fas fa-save mr-1"></i> Convert & Save
+            </button>
+            <button class="btn btn-secondary" id="btnImportCancel">
+              <i class="fas fa-times mr-1"></i> Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Templates Tab -->
+    <div class="tab-pane fade" id="template" role="tabpanel">
+      <div class="crafter-section">
+        <h4><i class="fas fa-book mr-2"></i>Recipe Templates</h4>
+        <p class="text-muted">Start with a pre-built recipe template and customize it to your liking.</p>
+        
+        <div class="row" id="templateGrid">
+          <!-- Templates loaded dynamically -->
+        </div>
+        
+        <div id="templateDetails" class="mt-4" style="display: none;">
+          <h5><i class="fas fa-info-circle mr-2"></i>Template Details</h5>
+          <div id="templateContent"></div>
+          <div class="mt-3">
+            <div class="form-group">
+              <label for="templateRecipeName">Recipe Name</label>
+              <input type="text" class="form-control" id="templateRecipeName" placeholder="Enter recipe name">
+            </div>
+            <button class="btn btn-success" id="btnTemplateSave">
+              <i class="fas fa-save mr-1"></i> Create Recipe
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manual Entry Tab -->
+    <div class="tab-pane fade" id="manual" role="tabpanel">
+      <div class="crafter-section">
+        <h4><i class="fas fa-edit mr-2"></i>Create Recipe Manually</h4>
+        
+        <form id="manualRecipeForm">
+          <!-- Basic Info -->
+          <div class="row mb-3">
+            <div class="col-md-4">
+              <label for="recipeName">Recipe Name</label>
+              <input type="text" class="form-control" id="recipeName" required maxlength="19" 
+                     placeholder="My Awesome IPA">
+            </div>
+            <div class="col-md-2">
+              <label for="recipeOG">OG</label>
+              <input type="number" class="form-control" id="recipeOG" step="0.001" 
+                     min="1.000" max="1.200" value="1.050">
+            </div>
+            <div class="col-md-2">
+              <label for="recipeIBU">IBU</label>
+              <input type="number" class="form-control" id="recipeIBU" 
+                     min="0" max="200" value="30">
+            </div>
+            <div class="col-md-2">
+              <label for="recipeABV">ABV %</label>
+              <input type="number" class="form-control" id="recipeABV" step="0.1"
+                     min="0" max="20" value="5.0">
+            </div>
+            <div class="col-md-2">
+              <label for="boilTime">Boil (min)</label>
+              <input type="number" class="form-control" id="boilTime" 
+                     min="15" max="120" value="60">
+            </div>
+          </div>
+
+          <!-- Mash Schedule -->
+          <div class="mb-4">
+            <h5><span class="mash-badge">MASH</span> Mash Schedule</h5>
+            <div id="mashSteps">
+              <div class="step-card mash-step">
+                <div class="row">
+                  <div class="col-md-4">
+                    <input type="text" class="form-control form-control-sm" placeholder="Step Name" value="Sacch Rest">
+                  </div>
+                  <div class="col-md-3">
+                    <div class="input-group input-group-sm">
+                      <input type="number" class="form-control" placeholder="Temp" value="152">
+                      <div class="input-group-append">
+                        <span class="input-group-text">°F</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-md-3">
+                    <div class="input-group input-group-sm">
+                      <input type="number" class="form-control" placeholder="Time" value="60">
+                      <div class="input-group-append">
+                        <span class="input-group-text">min</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-md-2">
+                    <button type="button" class="btn btn-sm btn-danger remove-step" style="display:none;">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-light mt-2" id="addMashStep">
+              <i class="fas fa-plus mr-1"></i> Add Mash Step
+            </button>
+          </div>
+
+          <!-- Hop Additions -->
+          <div class="mb-4">
+            <h5><span class="hop-badge">HOPS</span> Hop Additions (max 4)</h5>
+            <div id="hopAdditions">
+              <div class="step-card hop-step">
+                <div class="row">
+                  <div class="col-md-5">
+                    <input type="text" class="form-control form-control-sm" placeholder="Hop Name" value="Bittering Hops">
+                  </div>
+                  <div class="col-md-4">
+                    <div class="input-group input-group-sm">
+                      <input type="number" class="form-control" placeholder="Time" value="60">
+                      <div class="input-group-append">
+                        <span class="input-group-text">min left</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-md-3">
+                    <button type="button" class="btn btn-sm btn-danger remove-step" style="display:none;">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-light mt-2" id="addHopStep">
+              <i class="fas fa-plus mr-1"></i> Add Hop Addition
+            </button>
+            <small class="text-muted ml-2">(Time = minutes remaining in boil)</small>
+          </div>
+
+          <!-- Notes -->
+          <div class="mb-4">
+            <label for="recipeNotes">Notes</label>
+            <textarea class="form-control" id="recipeNotes" rows="3" 
+                      placeholder="Recipe notes, ingredients list, brewing tips..."></textarea>
+          </div>
+
+          <button type="submit" class="btn btn-success">
+            <i class="fas fa-save mr-1"></i> Create Recipe
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Recipe Sources Tab -->
+    <div class="tab-pane fade" id="sources" role="tabpanel">
+      <div class="crafter-section">
+        <h4><i class="fas fa-cloud-download-alt mr-2"></i>Free Recipe Sources</h4>
+        <p class="text-muted">Find recipes from these free sources, export as BeerXML, and import them here.</p>
+        
+        <div class="row">
+          <div class="col-md-6">
+            <div class="card bg-dark border-secondary mb-3">
+              <div class="card-body">
+                <h5 class="card-title"><i class="fas fa-beer mr-2"></i>Brewer's Friend</h5>
+                <p class="card-text">Thousands of public homebrew recipes with detailed ingredients and instructions.</p>
+                <a href="https://www.brewersfriend.com/search/" target="_blank" class="btn btn-outline-light">
+                  <i class="fas fa-external-link-alt mr-1"></i> Browse Recipes
+                </a>
+                <small class="d-block mt-2 text-muted">Export: Recipe page → Share → Export BeerXML</small>
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-md-6">
+            <div class="card bg-dark border-secondary mb-3">
+              <div class="card-body">
+                <h5 class="card-title"><i class="fas fa-flask mr-2"></i>Brewfather</h5>
+                <p class="card-text">Modern brewing software with a community recipe library.</p>
+                <a href="https://web.brewfather.app/" target="_blank" class="btn btn-outline-light">
+                  <i class="fas fa-external-link-alt mr-1"></i> Browse Recipes
+                </a>
+                <small class="d-block mt-2 text-muted">Export: Recipe → More → Export → BeerXML</small>
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-md-6">
+            <div class="card bg-dark border-secondary mb-3">
+              <div class="card-body">
+                <h5 class="card-title"><i class="fas fa-database mr-2"></i>BeerSmith Recipes</h5>
+                <p class="card-text">Over 1.8 million beer recipes from the BeerSmith community.</p>
+                <a href="https://beersmithrecipes.com/" target="_blank" class="btn btn-outline-light">
+                  <i class="fas fa-external-link-alt mr-1"></i> Browse Recipes
+                </a>
+                <small class="d-block mt-2 text-muted">Export: Open recipe → File → Export → BeerXML</small>
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-md-6">
+            <div class="card bg-dark border-secondary mb-3">
+              <div class="card-body">
+                <h5 class="card-title"><i class="fas fa-dog mr-2"></i>BrewDog DIY Dog</h5>
+                <p class="card-text">400+ official BrewDog recipes in PDF format (requires manual entry).</p>
+                <a href="https://brewdogmedia.s3.eu-west-2.amazonaws.com/docs/2019+DIY+DOG+-+V8.pdf" target="_blank" class="btn btn-outline-light">
+                  <i class="fas fa-file-pdf mr-1"></i> Download PDF
+                </a>
+                <small class="d-block mt-2 text-muted">PDF only - use Manual Entry tab to create recipe</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let selectedDevice = 'pico';
+    let selectedTemplate = null;
+    let importedRecipes = [];
+
+    // Device selection
+    document.querySelectorAll('.device-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.device-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            selectedDevice = this.dataset.device;
+            document.getElementById('selected_device').value = selectedDevice;
+        });
+    });
+
+    // Drag and drop for BeerXML
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('beerxmlFile');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file) handleBeerXMLFile(file);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files[0]) handleBeerXMLFile(e.target.files[0]);
+    });
+
+    function handleBeerXMLFile(file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            previewBeerXML(e.target.result);
+        };
+        reader.readAsText(file);
+    }
+
+    function previewBeerXML(xmlContent) {
+        fetch('/API/RecipeCrafter/previewBeerXML', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ xml_content: xmlContent })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                importedRecipes = data.recipes;
+                showImportPreview(data.recipes, xmlContent);
+            } else {
+                alert('Error parsing BeerXML: ' + data.error);
+            }
+        })
+        .catch(err => alert('Error: ' + err));
+    }
+
+    function showImportPreview(recipes, xmlContent) {
+        const preview = document.getElementById('importPreview');
+        const content = document.getElementById('previewContent');
+        
+        let html = '';
+        recipes.forEach((r, idx) => {
+            html += `
+                <div class="card bg-dark border-secondary mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">${r.name}</h5>
+                        <div class="row">
+                            <div class="col-md-3">
+                                <strong>Style:</strong> ${r.style || 'N/A'}<br>
+                                <strong>OG:</strong> ${r.og}<br>
+                                <strong>FG:</strong> ${r.fg}
+                            </div>
+                            <div class="col-md-3">
+                                <strong>ABV:</strong> ${r.abv}%<br>
+                                <strong>IBU:</strong> ${r.ibu}<br>
+                                <strong>Color:</strong> ${r.color_srm} SRM
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Fermentables:</strong><br>
+                                ${r.fermentables.map(f => `${f.amount_lb}lb ${f.name}`).join('<br>')}
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Hops:</strong><br>
+                                ${r.hops.map(h => `${h.name} @${h.time_min}min`).join('<br>')}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        content.innerHTML = html;
+        preview.style.display = 'block';
+        preview.dataset.xmlContent = xmlContent;
+    }
+
+    document.getElementById('btnImportSave').addEventListener('click', function() {
+        const xmlContent = document.getElementById('importPreview').dataset.xmlContent;
+        
+        fetch('/API/RecipeCrafter/importBeerXML', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                xml_content: xmlContent,
+                device_type: selectedDevice,
+                save: true
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert(`Successfully imported ${data.saved_count} recipe(s) for ${selectedDevice}!`);
+                window.location.href = `/${selectedDevice === 'zseries' ? 'zseries' : selectedDevice}_recipes`;
+            } else {
+                alert('Error importing: ' + data.error);
+            }
+        })
+        .catch(err => alert('Error: ' + err));
+    });
+
+    document.getElementById('btnImportCancel').addEventListener('click', function() {
+        document.getElementById('importPreview').style.display = 'none';
+        document.getElementById('previewContent').innerHTML = '';
+    });
+
+    // Load templates
+    fetch('/API/RecipeCrafter/getTemplates')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const grid = document.getElementById('templateGrid');
+                let html = '';
+                data.templates.forEach(t => {
+                    html += `
+                        <div class="col-md-4 mb-3">
+                            <div class="template-card" data-template="${t.id}">
+                                <h5>${t.name}</h5>
+                                <small class="text-muted">
+                                    OG: ${t.og} | IBU: ${t.ibu} | ABV: ${t.abv}%
+                                </small>
+                            </div>
+                        </div>
+                    `;
+                });
+                grid.innerHTML = html;
+                
+                // Template click handlers
+                grid.querySelectorAll('.template-card').forEach(card => {
+                    card.addEventListener('click', function() {
+                        grid.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+                        this.classList.add('selected');
+                        loadTemplateDetails(this.dataset.template);
+                    });
+                });
+            }
+        });
+
+    function loadTemplateDetails(templateId) {
+        fetch(`/API/RecipeCrafter/getTemplate/${templateId}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    selectedTemplate = data.template;
+                    const details = document.getElementById('templateDetails');
+                    const content = document.getElementById('templateContent');
+                    
+                    let html = `
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Mash Schedule:</h6>
+                                <ul>
+                                    ${data.template.mash_steps.map(m => `<li>${m.name}: ${m.temp_f}°F for ${m.time_min} min</li>`).join('')}
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Hop Schedule:</h6>
+                                <ul>
+                                    ${data.template.hop_additions.map(h => `<li>${h.name} @ ${h.time_min} min</li>`).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                    `;
+                    
+                    content.innerHTML = html;
+                    document.getElementById('templateRecipeName').value = data.template.name;
+                    details.style.display = 'block';
+                }
+            });
+    }
+
+    document.getElementById('btnTemplateSave').addEventListener('click', function() {
+        if (!selectedTemplate) return;
+        
+        const name = document.getElementById('templateRecipeName').value || selectedTemplate.name;
+        
+        fetch('/API/RecipeCrafter/createFromTemplate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                template_id: selectedTemplate.id,
+                name: name,
+                device_type: selectedDevice,
+                save: true
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert(`Recipe "${name}" created for ${selectedDevice}!`);
+                window.location.href = `/${selectedDevice === 'zseries' ? 'zseries' : selectedDevice}_recipes`;
+            } else {
+                alert('Error: ' + data.error);
+            }
+        });
+    });
+
+    // Manual entry - add/remove steps
+    document.getElementById('addMashStep').addEventListener('click', function() {
+        const container = document.getElementById('mashSteps');
+        const newStep = document.createElement('div');
+        newStep.className = 'step-card mash-step';
+        newStep.innerHTML = `
+            <div class="row">
+                <div class="col-md-4">
+                    <input type="text" class="form-control form-control-sm" placeholder="Step Name" value="">
+                </div>
+                <div class="col-md-3">
+                    <div class="input-group input-group-sm">
+                        <input type="number" class="form-control" placeholder="Temp" value="152">
+                        <div class="input-group-append">
+                            <span class="input-group-text">°F</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="input-group input-group-sm">
+                        <input type="number" class="form-control" placeholder="Time" value="60">
+                        <div class="input-group-append">
+                            <span class="input-group-text">min</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <button type="button" class="btn btn-sm btn-danger remove-step">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        container.appendChild(newStep);
+        updateRemoveButtons();
+    });
+
+    document.getElementById('addHopStep').addEventListener('click', function() {
+        const container = document.getElementById('hopAdditions');
+        if (container.querySelectorAll('.hop-step').length >= 4) {
+            alert('Maximum 4 hop additions supported by PicoBrew devices.');
+            return;
+        }
+        
+        const newStep = document.createElement('div');
+        newStep.className = 'step-card hop-step';
+        newStep.innerHTML = `
+            <div class="row">
+                <div class="col-md-5">
+                    <input type="text" class="form-control form-control-sm" placeholder="Hop Name" value="">
+                </div>
+                <div class="col-md-4">
+                    <div class="input-group input-group-sm">
+                        <input type="number" class="form-control" placeholder="Time" value="15">
+                        <div class="input-group-append">
+                            <span class="input-group-text">min left</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <button type="button" class="btn btn-sm btn-danger remove-step">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        container.appendChild(newStep);
+        updateRemoveButtons();
+    });
+
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('.remove-step')) {
+            e.target.closest('.step-card').remove();
+            updateRemoveButtons();
+        }
+    });
+
+    function updateRemoveButtons() {
+        const mashSteps = document.querySelectorAll('#mashSteps .mash-step');
+        mashSteps.forEach((step, idx) => {
+            const btn = step.querySelector('.remove-step');
+            btn.style.display = mashSteps.length > 1 ? 'block' : 'none';
+        });
+        
+        const hopSteps = document.querySelectorAll('#hopAdditions .hop-step');
+        hopSteps.forEach((step, idx) => {
+            const btn = step.querySelector('.remove-step');
+            btn.style.display = hopSteps.length > 1 ? 'block' : 'none';
+        });
+    }
+
+    // Manual form submission
+    document.getElementById('manualRecipeForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const mashSteps = [];
+        document.querySelectorAll('#mashSteps .mash-step').forEach(step => {
+            const inputs = step.querySelectorAll('input');
+            mashSteps.push({
+                name: inputs[0].value || 'Mash',
+                temp_f: parseInt(inputs[1].value) || 152,
+                time_min: parseInt(inputs[2].value) || 60
+            });
+        });
+        
+        const hopAdditions = [];
+        document.querySelectorAll('#hopAdditions .hop-step').forEach(step => {
+            const inputs = step.querySelectorAll('input');
+            hopAdditions.push({
+                name: inputs[0].value || 'Hops',
+                time_min: parseInt(inputs[1].value) || 60
+            });
+        });
+        
+        const recipe = {
+            name: document.getElementById('recipeName').value,
+            device_type: selectedDevice,
+            mash_steps: mashSteps,
+            hop_additions: hopAdditions,
+            boil_time: parseInt(document.getElementById('boilTime').value) || 60,
+            og: parseFloat(document.getElementById('recipeOG').value) || 1.050,
+            ibu: parseInt(document.getElementById('recipeIBU').value) || 30,
+            abv: parseFloat(document.getElementById('recipeABV').value) || 5.0,
+            notes: document.getElementById('recipeNotes').value,
+            save: true
+        };
+        
+        fetch('/API/RecipeCrafter/createRecipe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(recipe)
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert(`Recipe "${recipe.name}" created for ${selectedDevice}!`);
+                window.location.href = `/${selectedDevice === 'zseries' ? 'zseries' : selectedDevice}_recipes`;
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(err => alert('Error: ' + err));
+    });
+});
+</script>
+{% endblock %}

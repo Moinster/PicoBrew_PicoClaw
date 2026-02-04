@@ -1,0 +1,124 @@
+name: Build Raspberry Pi Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: 'Image variant (stable/latest)'
+        required: true
+        default: 'stable'
+        type: choice
+        options:
+          - stable
+          - latest
+      release_name:
+        description: 'Release name (e.g., beta7)'
+        required: true
+        default: 'beta7'
+
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          df -h
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y coreutils quilt parted qemu-user-static \
+            debootstrap zerofree zip dosfstools libarchive-tools libcap2-bin \
+            grep rsync xz-utils file git curl bc dos2unix
+
+      - name: Clone pi-gen
+        run: |
+          git clone --depth 1 https://github.com/RPi-Distro/pi-gen.git
+
+      - name: Configure pi-gen
+        run: |
+          cd pi-gen
+          
+          # Create config
+          cat > config <<EOF
+          export IMG_NAME=picobrew_picoclaw-${{ github.event.inputs.variant }}
+          export RELEASE=bookworm
+          export DEPLOY_ZIP=1
+          export LOCALE_DEFAULT=en_US.UTF-8
+          export TARGET_HOSTNAME=picoclaw
+          export KEYBOARD_KEYMAP=us
+          export KEYBOARD_LAYOUT="English (US)"
+          export TIMEZONE_DEFAULT=America/New_York
+          export FIRST_USER_NAME=pi
+          export FIRST_USER_PASS=raspberry
+          export ENABLE_SSH=1
+          EOF
+          
+          # Skip desktop stages (lite image only)
+          touch ./stage3/SKIP ./stage4/SKIP ./stage5/SKIP
+          touch ./stage4/SKIP_IMAGES ./stage5/SKIP_IMAGES
+          rm -f stage2/EXPORT_NOOBS || true
+          
+          # Create custom stage
+          mkdir -p stage2/99-picoclaw
+          
+          # Copy our setup script, updating the variant
+          sed "s/export IMG_VARIANT=.*/export IMG_VARIANT=\"${{ github.event.inputs.variant }}\"/" \
+            ../scripts/pi/00-run-chroot.sh > stage2/99-picoclaw/00-run-chroot.sh
+          chmod +x stage2/99-picoclaw/00-run-chroot.sh
+          
+          # Update git clone URL to this repo
+          sed -i 's|https://github.com/chiefwigms/picobrew_pico.git|https://github.com/${{ github.repository }}.git|g' \
+            stage2/99-picoclaw/00-run-chroot.sh
+
+      - name: Build image
+        run: |
+          cd pi-gen
+          sudo ./build.sh
+
+      - name: Calculate checksums
+        run: |
+          cd pi-gen/deploy
+          for f in *.zip; do
+            md5sum "$f" > "$f.md5"
+            sha256sum "$f" > "$f.sha256"
+          done
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: picoclaw-${{ github.event.inputs.variant }}-${{ github.event.inputs.release_name }}
+          path: pi-gen/deploy/*
+          retention-days: 30
+
+      - name: Create Release (if tagged)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            pi-gen/deploy/*.zip
+            pi-gen/deploy/*.md5
+            pi-gen/deploy/*.sha256
+          body: |
+            ## PicoBrew PicoClaw ${{ github.event.inputs.release_name }} - Raspberry Pi Images
+            
+            ### Install Procedure
+            1. Download the appropriate `.zip` file and extract the `.img` file
+            2. Write the image to an SD card using [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
+            3. (Optional) Edit `wpa_supplicant.conf` on the boot partition with your WiFi credentials
+            4. Insert SD card into Pi and power on
+            5. Wait 2-3 minutes for first boot
+            6. Connect to WiFi network `PICOBREW` (password: `PICOBREW`)
+            7. Access the server at http://picobrew.com or http://192.168.72.1
+            
+            ### Checksums
+            See `.md5` and `.sha256` files for verification.

@@ -17,12 +17,48 @@ Highcharts.chart(graph_data.chart_id, {
             self.series[0].addPoint([point.time, point.temp]);
             self.series[1].addPoint([point.time, point.pres]);
           }
+          
+          // Update fermentation status UI if available
+          if (data['fermentation_status'] && typeof updateFermStatusUI === 'function') {
+            updateFermStatusUI(graph_data.chart_id, data['fermentation_status']);
+          }
+        });
+        
+        // Listen for dedicated status updates
+        var status_event_name = 'ferm_status_update|' + graph_data.chart_id
+        socket.on(status_event_name, function (event) {
+          var status = JSON.parse(event);
+          if (typeof updateFermStatusUI === 'function') {
+            updateFermStatusUI(graph_data.chart_id, status);
+          }
+        });
+        
+        // Listen for auto-complete notifications
+        var auto_complete_event = 'ferm_auto_complete|' + graph_data.chart_id
+        socket.on(auto_complete_event, function (event) {
+          var data = JSON.parse(event);
+          // Call the handler function if it exists
+          if (typeof handleFermAutoComplete === 'function') {
+            handleFermAutoComplete(data.uid, data);
+          } else {
+            // Fallback: show alert and refresh
+            if (typeof showAlert === 'function') {
+              showAlert('🎉 Fermentation complete for ' + data.uid + '!', 'success');
+            }
+            setTimeout(function () { window.location.href = "/"; }, 3000);
+          }
         });
       },
     },
 
     type: 'spline',
-    zoomType: 'xy'
+    zoomType: 'xy',
+    panning: {
+      enabled: true,
+      type: 'xy'
+    },
+    panKey: 'shift',
+    pinchType: 'xy'
   },
 
   credits: {
@@ -34,9 +70,24 @@ Highcharts.chart(graph_data.chart_id, {
   plotOptions: {
     spline: {
       marker: {
-        enabled: true
+        enabled: true,
+        radius: 3
+      }
+    },
+    series: {
+      states: {
+        inactive: {
+          opacity: 1
+        }
       }
     }
+  },
+
+  legend: {
+    itemStyle: {
+      fontSize: '12px'
+    },
+    itemMarginBottom: 5
   },
 
   title: graph_data.title,
@@ -84,4 +135,62 @@ Highcharts.chart(graph_data.chart_id, {
     }],
 
   series: graph_data.series,
+
+  responsive: {
+    rules: [{
+      condition: {
+        maxWidth: 600
+      },
+      chartOptions: {
+        chart: {
+          spacingLeft: 5,
+          spacingRight: 5
+        },
+        legend: {
+          layout: 'horizontal',
+          align: 'center',
+          verticalAlign: 'bottom',
+          itemStyle: {
+            fontSize: '10px'
+          }
+        },
+        xAxis: {
+          title: {
+            text: null
+          },
+          labels: {
+            style: {
+              fontSize: '10px'
+            }
+          }
+        },
+        yAxis: [{
+          title: {
+            text: null
+          },
+          labels: {
+            style: {
+              fontSize: '10px'
+            }
+          }
+        }, {
+          title: {
+            text: null
+          },
+          labels: {
+            style: {
+              fontSize: '10px'
+            }
+          }
+        }],
+        plotOptions: {
+          spline: {
+            marker: {
+              radius: 2
+            }
+          }
+        }
+      }
+    }]
+  }
 });
