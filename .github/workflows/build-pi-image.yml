@@ -93,10 +93,16 @@ jobs:
       - name: Calculate checksums
         run: |
           cd pi-gen/deploy
-          for f in *.zip; do
-            md5sum "$f" > "$f.md5"
-            sha256sum "$f" > "$f.sha256"
-          done
+          # make sure the produced .zip files are writable by the runner
+          if ls *.zip 1> /dev/null 2>&1; then
+            for f in *.zip; do
+              sudo chmod a+rw "$f" || true
+              md5sum "$f" > "$f.md5"
+              sha256sum "$f" > "$f.sha256"
+            done
+          else
+            echo "No .zip files found in pi-gen/deploy"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
