@@ -11,7 +11,7 @@
 
 The PicoBrew Pico server, now with claws!
 
-This project allows for full control of the PicoBrew Pico S/C/Pro & Zymatic models, plus new recipe building capabilities and an AI Agent interface.  Shout out to [@chiefwigms] (https://github.com/chiefwigms/picobrew_pico) [@hotzenklotz](https://github.com/hotzenklotz/picobrew-server), @tmack8001 for Z series support & updates.  
+This project allows for full control of the PicoBrew Pico S/C/Pro & Zymatic models, plus new recipe building capabilities and an AI Agent interface.  Shout out to [@chiefwigms](https://github.com/chiefwigms/picobrew_pico) [@hotzenklotz](https://github.com/hotzenklotz/picobrew-server), @tmack8001 for Z series support & updates.  
 
 
 ## Supported Devices:
