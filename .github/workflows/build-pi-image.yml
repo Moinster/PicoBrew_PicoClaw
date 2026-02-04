@@ -44,7 +44,8 @@ jobs:
 
       - name: Clone pi-gen
         run: |
-          git clone --depth 1 https://github.com/RPi-Distro/pi-gen.git
+          # Use the bullseye branch - main branch is for Bookworm and has incompatible package names
+          git clone --depth 1 --branch bullseye https://github.com/RPi-Distro/pi-gen.git
 
       - name: Configure pi-gen
         run: |
