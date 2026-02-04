@@ -50,10 +50,11 @@ jobs:
         run: |
           cd pi-gen
           
-          # Create config - using Buster for Pi Zero W compatibility (lighter weight)
+          # Create config - using Bullseye (Legacy 32-bit) for Pi Zero W compatibility
+          # Bullseye is lighter than Bookworm but still fully supported
           cat > config <<EOF
           export IMG_NAME=picobrew_picoclaw-${{ github.event.inputs.variant }}
-          export RELEASE=buster
+          export RELEASE=bullseye
           export DEPLOY_ZIP=1
           export LOCALE_DEFAULT=en_US.UTF-8
           export TARGET_HOSTNAME=picoclaw
