@@ -19,6 +19,9 @@ on:
         required: true
         default: 'beta7'
 
+permissions:
+  contents: write
+
 jobs:
   build-image:
     runs-on: ubuntu-latest
