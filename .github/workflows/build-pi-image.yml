@@ -93,10 +93,11 @@ jobs:
       - name: Calculate checksums
         run: |
           cd pi-gen/deploy
+          # ensure deploy directory and its contents are writable by the runner
+          sudo chmod -R a+rwx . || true
           # make sure the produced .zip files are writable by the runner
           if ls *.zip 1> /dev/null 2>&1; then
             for f in *.zip; do
-              sudo chmod a+rw "$f" || true
               md5sum "$f" > "$f.md5"
               sha256sum "$f" > "$f.sha256"
             done
