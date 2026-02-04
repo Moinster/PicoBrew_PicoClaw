@@ -79,7 +79,8 @@ echo 'Removing default networking...'
 apt -y --autoremove purge ifupdown dhcpcd5 isc-dhcp-client isc-dhcp-common rsyslog avahi-daemon
 apt-mark hold ifupdown dhcpcd5 isc-dhcp-client isc-dhcp-common rsyslog raspberrypi-net-mods openresolv avahi-daemon libnss-mdns
 echo 'Installing required packages...'
-apt -y install libnss-resolve hostapd dnsmasq dnsutils samba git python3 python3-pip nginx openssh-server bluez
+# Include python3-venv so `python3 -m venv` works inside the chroot
+apt -y install libnss-resolve hostapd dnsmasq dnsutils samba git python3 python3-pip python3-venv nginx openssh-server bluez
 
 echo 'Installing PicoClaw Server...'
 cd /
