@@ -49,9 +49,9 @@ cat > /boot/wpa_supplicant.conf <<EOF
 country=US
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
+p2p_disabled=1
 
 network={
-    # bssid=YO:UR:24:GH:ZB:SS:ID
     ssid="YOUR_WIFI_NAME"
     psk="YOUR_WIFI_PASSWORD"
     key_mgmt=WPA-PSK
@@ -120,63 +120,51 @@ echo 'Setting up WiFi AP + Client...'
 rm -rf /etc/network /etc/dhcp
 systemctl enable systemd-networkd.service systemd-resolved.service
 
-# Setup hostapd
+# Setup hostapd for dedicated AP interface (uap0)
 cat > /etc/hostapd/hostapd.conf <<EOF
+interface=uap0
 driver=nl80211
 ssid=${AP_SSID}
-country_code=US
 hw_mode=g
-channel=1
-auth_algs=1
+channel=6
 wpa=2
 wpa_passphrase=${AP_PASS}
 wpa_key_mgmt=WPA-PSK
-wpa_pairwise=TKIP
 rsn_pairwise=CCMP
-bridge=br0
 EOF
 chmod 600 /etc/hostapd/hostapd.conf
 
-cat > /etc/systemd/system/accesspoint@.service <<EOF
+cat > /etc/systemd/system/picobrew-accesspoint.service <<EOF
 [Unit]
-Description=accesspoint with hostapd (interface-specific version)
-Wants=wpa_supplicant@%i.service
+Description=PICOBREW access point
+After=network.target
+Wants=network-online.target
 
 [Service]
-ExecStartPre=/sbin/iw dev %i interface add ap@%i type __ap
-ExecStart=/usr/sbin/hostapd -i ap@%i /etc/hostapd/hostapd.conf
-ExecStartPost=/usr/sbin/rfkill unblock wifi wlan
-ExecStopPost=-/sbin/iw dev ap@%i del
-ExecStopPost=/usr/sbin/rfkill unblock wifi wlan
+Type=simple
+ExecStartPre=/sbin/iw dev wlan0 interface add uap0 type __ap
+ExecStart=/usr/sbin/hostapd /etc/hostapd/hostapd.conf
+ExecStartPost=/usr/sbin/rfkill unblock wlan
+ExecStopPost=-/sbin/iw dev uap0 del
+ExecStopPost=/usr/sbin/rfkill unblock wlan
+Restart=always
 
 [Install]
-WantedBy=sys-subsystem-net-devices-%i.device
+WantedBy=multi-user.target
 EOF
-systemctl disable hostapd.service
-systemctl disable wpa_supplicant.service
+
+systemctl daemon-reload
+systemctl enable picobrew-accesspoint.service
+
+# Enable wpa_supplicant for the STA interface
+systemctl enable wpa_supplicant@wlan0.service
 rm -f /etc/wpa_supplicant/wpa_supplicant.conf
-systemctl enable accesspoint@wlan0.service
 
-#SYSTEMD_EDITOR=tee systemctl edit wpa_supplicant@wlan0.service <<EOF
-mkdir -p /etc/systemd/system/wpa_supplicant@wlan0.service.d
-cat > /etc/systemd/system/wpa_supplicant@wlan0.service.d/override.conf <<EOF
-[Unit]
-BindsTo=accesspoint@%i.service
-After=accesspoint@%i.service
-
-[Service]
-ExecStartPost=/lib/systemd/systemd-networkd-wait-online --interface=%i --timeout=60 --quiet
-ExecStartPost=/usr/sbin/rfkill unblock wifi wlan
-ExecStartPost=/bin/ip link set ap@%i up
-ExecStopPost=-/bin/ip link set ap@%i up
-ExecStopPost=/usr/sbin/rfkill unblock wifi wlan
-EOF
-
-# Overwrite wpa_supplicant.conf (if exists) from boot
 cat > /etc/systemd/system/update_wpa_supplicant.service <<EOF
 [Unit]
 Description=Copy user wpa_supplicant.conf
 ConditionPathExists=/boot/wpa_supplicant.conf
+Before=wpa_supplicant@wlan0.service
 
 [Service]
 Type=oneshot
@@ -187,47 +175,33 @@ ExecStartPost=/bin/chmod 600 /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
 [Install]
 WantedBy=multi-user.target
 EOF
+
 systemctl enable update_wpa_supplicant.service
 
-# Setup static interfaces
-cat > /etc/systemd/network/02-br0.netdev <<EOF
-[NetDev]
-Name=br0
-Kind=bridge
+# Setup systemd-networkd for wlan0 (client) and uap0 (AP)
+cat > /etc/systemd/network/08-wlan0.network <<EOF
+[Match]
+Name=wlan0
+[Network]
+DHCP=yes
+LLMNR=no
+MulticastDNS=no
 EOF
 
+cat > /etc/systemd/network/10-uap0.network <<EOF
+[Match]
+Name=uap0
+[Network]
+Address=${AP_IP}/24
+IPMasquerade=yes
+EOF
+
+# eth0 gets DHCP if connected (for debugging/updates)
 cat > /etc/systemd/network/04-eth0.network <<EOF
 [Match]
 Name=eth0
 [Network]
-Bridge=br0
-ConfigureWithoutCarrier=yes
-EOF
-
-# Network config for the AP virtual interface - must be bridged to br0
-cat > /etc/systemd/network/06-ap.network <<EOF
-[Match]
-Name=ap@*
-[Network]
-Bridge=br0
-EOF
-
-cat > /etc/systemd/network/08-wifi.network <<EOF
-[Match]
-Name=wl*
-[Network]
-LLMNR=no
-MulticastDNS=no
-IPForward=yes
 DHCP=yes
-EOF
-
-cat > /etc/systemd/network/16-br0_up.network <<EOF
-[Match]
-Name=br0
-[Network]
-IPMasquerade=yes
-Address=${AP_IP}/24
 EOF
 
 echo 'Disable resolved DNS stub listener & point to localhost (dnsmasq)...'
@@ -250,9 +224,12 @@ address=/www.picobrew.com/${AP_IP}
 server=8.8.8.8
 server=8.8.4.4
 server=1.1.1.1
-interface=br0
-  dhcp-range=192.168.72.100,192.168.72.200,255.255.255.0,24h
+interface=uap0
+bind-interfaces
+dhcp-range=192.168.72.100,192.168.72.200,255.255.255.0,24h
 EOF
+
+systemctl enable dnsmasq.service
 
 echo 'Setting up /etc/hosts...'
 cat >> /etc/hosts <<EOF
@@ -341,9 +318,15 @@ cat >> /etc/rc.local <<EOF
 # reload systemd manager configuration to recreate entire dependency tree
 systemctl daemon-reload
 
-# toggle off WiFi power management on wireless interfaces (wlan0 and ap0)
+# toggle off WiFi power management
 iw wlan0 set power_save off || true
-iw ap@wlan0 set power_save off || true
+sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+iptables -t nat -C POSTROUTING -o wlan0 -j MASQUERADE 2>/dev/null || \
+    iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
+iptables -C FORWARD -i wlan0 -o uap0 -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+    iptables -A FORWARD -i wlan0 -o uap0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -C FORWARD -i uap0 -o wlan0 -j ACCEPT 2>/dev/null || \
+    iptables -A FORWARD -i uap0 -o wlan0 -j ACCEPT
 
 cd /picobrew_picoclaw
 
