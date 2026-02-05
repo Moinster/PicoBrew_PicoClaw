@@ -57,10 +57,11 @@ jobs:
         run: |
           cd pi-gen
           
-          # Determine variant: from workflow input or default to stable for tag builds
+          # Determine variant: from workflow input or default to latest for tag builds
+          # Using 'latest' because 'stable' downloads old 2019 Buster firmware that doesn't work on Bullseye
           VARIANT="${{ github.event.inputs.variant }}"
           if [ -z "$VARIANT" ]; then
-            VARIANT="stable"
+            VARIANT="latest"
           fi
           
           # Create config - using Bullseye (Legacy 32-bit) for Pi Zero W compatibility
