@@ -103,7 +103,15 @@ cd /picobrew_picoclaw
 # Create config.yaml from example (config.yaml is gitignored)
 cp config.example.yaml config.yaml
 
-# Install Python packages directly (single-purpose device, no venv needed)
+# Configure pip to use piwheels.org for Raspberry Pi compatible wheels (ARMv6/v7/v8)
+# This is critical for Pi Zero W (ARMv6) compatibility
+mkdir -p /etc/pip.conf.d
+cat > /etc/pip.conf <<EOF
+[global]
+extra-index-url=https://www.piwheels.org/simple
+EOF
+
+# Install Python packages - piwheels provides pre-built ARMv6 wheels
 pip3 install --upgrade pip
 pip3 install -r requirements.txt
 cd /
