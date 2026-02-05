@@ -14,6 +14,18 @@ export GIT_SHA='$(git rev-parse --short HEAD)'
 # GitHub repository to clone (override for forks)
 GIT_REPO="${GIT_REPO:-https://github.com/Moinster/PicoBrew_PicoClaw.git}"
 
+# Disable the first-boot wizard (piwiz) so Pi boots directly without user interaction
+echo 'Disabling first-boot wizard...'
+systemctl disable userconfig.service || true
+systemctl mask userconfig.service || true
+rm -f /etc/xdg/autostart/piwiz.desktop || true
+rm -f /etc/systemd/system/getty@tty1.service.d/autologin.conf || true
+# Create the pi user if it doesn't exist (pi-gen should create it, but ensure it)
+if ! id -u pi > /dev/null 2>&1; then
+    useradd -m -G sudo,video,audio,bluetooth,netdev,gpio,i2c,spi -s /bin/bash pi
+    echo "pi:raspberry" | chpasswd
+fi
+
 # Enable root login
 #sed -i 's/.*PermitRootLogin.*/PermitRootLogin yes/g' /etc/ssh/sshd_config
 
