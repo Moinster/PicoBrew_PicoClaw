@@ -100,6 +100,9 @@ cd /
 git clone ${GIT_REPO} picobrew_picoclaw
 cd /picobrew_picoclaw
 
+# Create config.yaml from example (config.yaml is gitignored)
+cp config.example.yaml config.yaml
+
 # Install Python packages directly (single-purpose device, no venv needed)
 pip3 install --upgrade pip
 pip3 install -r requirements.txt
