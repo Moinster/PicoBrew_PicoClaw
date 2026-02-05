@@ -111,7 +111,6 @@ systemctl enable systemd-networkd.service systemd-resolved.service
 
 # Setup hostapd
 cat > /etc/hostapd/hostapd.conf <<EOF
-# interface is set via command line (-i ap@wlan0)
 driver=nl80211
 ssid=${AP_SSID}
 country_code=US
@@ -123,7 +122,7 @@ wpa_passphrase=${AP_PASS}
 wpa_key_mgmt=WPA-PSK
 wpa_pairwise=TKIP
 rsn_pairwise=CCMP
-# Note: bridge=br0 removed - using systemd-networkd for bridging with virtual AP interface
+bridge=br0
 EOF
 chmod 600 /etc/hostapd/hostapd.conf
 
