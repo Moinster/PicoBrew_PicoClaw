@@ -196,6 +196,14 @@ Bridge=br0
 ConfigureWithoutCarrier=yes
 EOF
 
+# Network config for the AP virtual interface - must be bridged to br0
+cat > /etc/systemd/network/06-ap.network <<EOF
+[Match]
+Name=ap@*
+[Network]
+Bridge=br0
+EOF
+
 cat > /etc/systemd/network/08-wifi.network <<EOF
 [Match]
 Name=wl*
