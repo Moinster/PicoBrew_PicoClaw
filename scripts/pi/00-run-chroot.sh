@@ -172,7 +172,7 @@ wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 bridge=br0
 EOF
-chmod 600 /etc/hostapd/hostapd
+chmod 600 /etc/hostapd/hostapd.conf
 
 # === 11. Instance-based accesspoint@.service ===
 cat > /etc/systemd/system/accesspoint@.service <<EOF
@@ -315,7 +315,7 @@ if [ -f "$NGINX_CONF" ]; then
     rm -f /etc/nginx/sites-enabled/default
     systemctl enable nginx
 else
-    echo "⚠️ Warning: Nginx config not found at $NGINX_CONF"
+    echo " Warning: Nginx config not found at $NGINX_CONF"
 fi
 
 # === 20. Samba ===
@@ -403,9 +403,9 @@ echo "[rc.local] Server PID: $SERVER_PID"
 # Verify it's running
 sleep 3
 if kill -0 "$SERVER_PID" 2>/dev/null; then
-    logger -t picoclaw-boot "✅ Server started (PID $SERVER_PID)"
+    logger -t picoclaw-boot " Server started (PID $SERVER_PID)"
 else
-    logger -t picoclaw-boot "❌ Server failed to start — check /var/log/picoclaw_server.log"
+    logger -t picoclaw-boot " Server failed to start — check /var/log/picoclaw_server.log"
     tail -n 20 /var/log/picoclaw_server.log | logger -t picoclaw-boot
 fi
 
@@ -416,4 +416,4 @@ chmod +x /etc/rc.local
 systemctl enable rc-local.service
 
 # === 22. Final cleanup ===
-echo '✅ Finished custom pi setup!'
+echo ' Finished custom pi setup!'
