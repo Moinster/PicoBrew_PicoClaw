@@ -117,8 +117,9 @@ EOF
 # Install Python packages - piwheels provides pre-built ARMv6 wheels
 pip3 install --upgrade pip
 pip3 install -r requirements.txt
-# Explicitly install packages known to cause 'Illegal instruction' on ARM
-pip3 install eventlet flask_socketio requests
+# Force reinstall packages known to cause 'Illegal instruction' from piwheels
+pip3 uninstall -y eventlet flask-socketio requests
+pip3 install --no-cache-dir --force-reinstall eventlet flask-socketio requests
 cd /
 
 echo 'Setting up WiFi AP + Client...'
@@ -143,17 +144,20 @@ chmod 600 /etc/hostapd/hostapd.conf
 cat > /etc/systemd/system/picobrew-accesspoint.service <<EOF
 [Unit]
 Description=PICOBREW access point
-After=dhcpcd.service wlan0.device
-Wants=dhcpcd.service
+After=network.target dhcpcd.service sys-subsystem-net-devices-wlan0.device
+Wants=network.target dhcpcd.service
 
 [Service]
 Type=simple
+ExecStartPre=/bin/sleep 3
+ExecStartPre=/sbin/ip link set wlan0 up
 ExecStartPre=/sbin/iw dev wlan0 interface add uap0 type __ap
 ExecStart=/usr/sbin/hostapd /etc/hostapd/hostapd.conf
 ExecStartPost=/usr/sbin/rfkill unblock wlan
 ExecStopPost=-/sbin/iw dev uap0 del
 ExecStopPost=/usr/sbin/rfkill unblock wlan
-Restart=always
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
