@@ -117,6 +117,8 @@ EOF
 # Install Python packages - piwheels provides pre-built ARMv6 wheels
 pip3 install --upgrade pip
 pip3 install -r requirements.txt
+# Explicitly install packages known to cause 'Illegal instruction' on ARM
+pip3 install eventlet flask_socketio requests
 cd /
 
 echo 'Setting up WiFi AP + Client...'
@@ -166,19 +168,21 @@ rm -f /etc/wpa_supplicant/wpa_supplicant.conf
 
 cat > /etc/systemd/system/update_wpa_supplicant.service <<EOF
 [Unit]
-Description=Copy user wpa_supplicant.conf
-ConditionPathExists=/boot/wpa_supplicant.conf
+Description=Setup wpa_supplicant config for wlan0
 Before=wpa_supplicant@wlan0.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/mv /boot/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
-ExecStartPost=/bin/chmod 600 /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
+ExecStart=/bin/bash -c 'if [ -f /boot/wpa_supplicant.conf ]; then mv /boot/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant-wlan0.conf; else cp /etc/wpa_supplicant/wpa_supplicant-wlan0.conf.example /etc/wpa_supplicant/wpa_supplicant-wlan0.conf 2>/dev/null || echo "Place your wpa_supplicant.conf on /boot before first boot"; fi'
+ExecStartPost=/bin/chmod 600 /etc/wpa_supplicant/wpa_supplicant-wlan0.conf || true
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# Create a fallback example config in /etc so users can copy it to /boot if needed
+cp /boot/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant-wlan0.conf.example
 
 systemctl enable update_wpa_supplicant.service
 
@@ -243,6 +247,9 @@ cat > /etc/systemd/system/dnsmasq.service.d/override.conf <<EOF
 [Unit]
 After=picobrew-accesspoint.service
 Requires=picobrew-accesspoint.service
+
+[Service]
+ExecStartPre=/bin/sleep 2
 EOF
 
 
