@@ -1,5 +1,5 @@
 #!/bin/bash
-# AP for Pico devices
+# AP for Pico devices — Pi Zero W STA+AP using bridge (br0) and ap@wlan0
 # SSID Must be > 8 Chars
 AP_IP="192.168.72.1"
 AP_SSID="PICOBREW"
@@ -7,53 +7,38 @@ AP_PASS="PICOBREW"
 
 export IMG_NAME="PICOBREW_PICOCLAW"
 export IMG_RELEASE="beta7"
-# export IMG_VARIANT="stable"
-export IMG_VARIANT="latest"
+export IMG_VARIANT="${IMG_VARIANT:-latest}"
 export GIT_SHA='$(git rev-parse --short HEAD)'
 
-# GitHub repository to clone (override for forks)
+# GitHub repository (overrideable)
 GIT_REPO="${GIT_REPO:-https://github.com/Moinster/PicoBrew_PicoClaw.git}"
 
-# Disable the first-boot wizard (piwiz) so Pi boots directly without user interaction
+# === 1. Disable first-boot wizard ===
 echo 'Disabling first-boot wizard...'
 systemctl disable userconfig.service || true
 systemctl mask userconfig.service || true
 rm -f /etc/xdg/autostart/piwiz.desktop || true
 rm -f /etc/systemd/system/getty@tty1.service.d/autologin.conf || true
 
-# Create the pi user if it doesn't exist (pi-gen should create it, but ensure it)
-if ! id -u pi > /dev/null 2>&1; then
+# Ensure pi user exists (pi-gen usually creates it, but safe to ensure)
+if ! id -u pi >/dev/null 2>&1; then
     useradd -m -G sudo,video,audio,bluetooth,netdev,gpio,i2c,spi -s /bin/bash pi
     echo "pi:raspberry" | chpasswd
 fi
 
-# Enable root login (Consider removing if not strictly necessary for debugging)
-#sed -i 's/.*PermitRootLogin.*/PermitRootLogin yes/g' /etc/ssh/sshd_config
-
+# === 2. Bluetooth & UART ===
 echo 'Making bluetooth accessible without being root...'
-# Attempt to set capability but don't fail the build if not permitted (CI chroot may be unprivileged)
 if command -v setcap >/dev/null 2>&1; then
-  setcap cap_net_raw+eip /usr/bin/python3 || true
+    setcap cap_net_raw+eip /usr/bin/python3 || true
 fi
 usermod -a -G bluetooth pi || true
 systemctl restart dbus || true
 
-echo 'Load default wpa_supplicant.conf...'
-cat > /etc/wpa_supplicant/wpa_supplicant-wlan0.conf.example <<EOF
-country=US
-ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-update_config=1
-p2p_disabled=1
-
-network={
-    ssid="YOUR_WIFI_NAME"
-    psk="YOUR_WIFI_PASSWORD"
-    key_mgmt=WPA-PSK
-    # freq_list=2412 2417 2422 2427 2432 2437 2442 2447 2452 2457 2462 # Consider removing freq_list for auto-selection
-}
+cat >> /boot/config.txt <<EOF
+enable_uart=1
 EOF
 
-# Also write to /boot so user can edit before first boot
+# === 3. wpa_supplicant example config (for /boot & /etc) ===
 cat > /boot/wpa_supplicant.conf <<EOF
 country=US
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
@@ -64,27 +49,28 @@ network={
     ssid="YOUR_WIFI_NAME"
     psk="YOUR_WIFI_PASSWORD"
     key_mgmt=WPA-PSK
-    # freq_list=2412 2417 2422 2427 2432 2437 2442 2447 2452 2457 2462 # Consider removing freq_list for auto-selection
 }
 EOF
 
-echo 'Disabling apt-daily timers...'
-systemctl stop apt-daily.timer
-systemctl stop apt-daily-upgrade.timer
-systemctl disable apt-daily.timer
-systemctl disable apt-daily-upgrade.timer
+# Copy to /etc as fallback (will be replaced by update_wpa_supplicant.service if /boot exists)
+cp /boot/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant-wlan0.conf.example
 
-# revert 'stable' image to have rpt4 wireless firmware
-# build 'latest' image with the following lines commented out (required for Pi 400 - see https://github.com/chiefwigms/picobrew_pico/issues/182)
-if [[ ${IMG_VARIANT} == "stable" ]]; then
-    echo 'Revert to stable WiFi firmware...'
-    dpkg --purge firmware-brcm80211
-    wget http://archive.raspberrypi.org/debian/pool/main/f/firmware-nonfree/firmware-brcm80211_20190114-1+rpt4_all.deb
+# === 4. Disable apt timers ===
+echo 'Disabling apt-daily timers...'
+systemctl stop apt-daily.timer apt-daily-upgrade.timer
+systemctl disable apt-daily.timer apt-daily-upgrade.timer
+
+# === 5. WiFi firmware (optional stable revert) ===
+if [[ "${IMG_VARIANT}" == "stable" ]]; then
+    echo 'Reverting to stable WiFi firmware (rpt4)...'
+    dpkg --purge firmware-brcm80211 || true
+    wget -q http://archive.raspberrypi.org/debian/pool/main/f/firmware-nonfree/firmware-brcm80211_20190114-1+rpt4_all.deb
     dpkg -i firmware-brcm80211_20190114-1+rpt4_all.deb
     apt-mark hold firmware-brcm80211
-    rm firmware-brcm80211_20190114-1+rpt4_all.deb
+    rm -f firmware-brcm80211_20190114-1+rpt4_all.deb
 fi
 
+# === 6. Update & install core packages — REMOVE dhcpcd5! ===
 echo 'Updating packages...'
 export DEBIAN_FRONTEND=noninteractive
 echo "APT::Acquire::Retries \"5\";" > /etc/apt/apt.conf.d/80-retries
@@ -95,239 +81,202 @@ echo "samba-common samba-common/do_debconf boolean true" | debconf-set-selection
 apt -y update
 apt -y upgrade
 
-# Remove potentially conflicting networking packages (keeping dhcpcd for client management)
-echo 'Removing conflicting networking packages (keeping dhcpcd)...'
-apt -y --autoremove purge ifupdown isc-dhcp-client isc-dhcp-common rsyslog avahi-daemon
-apt-mark hold ifupdown isc-dhcp-client isc-dhcp-common rsyslog raspberrypi-net-mods openresolv avahi-daemon
+# 🔥 CRITICAL: Remove dhcpcd5 and all conflicting net tools
+echo 'Purging dhcpcd5 and legacy networking...'
+apt -y --autoremove purge \
+    ifupdown dhcpcd5 isc-dhcp-client isc-dhcp-common rsyslog avahi-daemon libnss-mdns
+apt-mark hold \
+    ifupdown dhcpcd5 isc-dhcp-client isc-dhcp-common rsyslog raspberrypi-net-mods openresolv avahi-daemon libnss-mdns
 
 echo 'Installing required packages...'
-# python3-venv removed - not needed for single-purpose device
-apt -y install dhcpcd5 libnss-resolve hostapd dnsmasq dnsutils samba git python3 python3-pip nginx openssh-server bluez
-systemctl enable dhcpcd
+apt -y install \
+    libnss-resolve hostapd dnsmasq dnsutils samba git python3 python3-pip nginx openssh-server bluez
 
-echo 'Installing PicoClaw Server...'
+systemctl enable systemd-networkd systemd-resolved
+
+# === 7. Install PicoClaw Server ===
 cd /
-git clone ${GIT_REPO} picobrew_picoclaw
+git clone "${GIT_REPO}" picobrew_picoclaw
 cd /picobrew_picoclaw
 
-# Create config.yaml from example (config.yaml is gitignored)
 cp config.example.yaml config.yaml
 
-# --- CRITICAL FIX FOR ILLEGAL INSTRUCTION ---
-# Configure pip to use piwheels.org as PRIMARY source BEFORE installing anything
-# This is critical for Pi Zero W (ARMv6) - piwheels MUST be primary, not fallback
+# === 8. pip: FORCE piwheels as primary (ARMv6 fix) ===
 mkdir -p /etc/pip.conf.d
 cat > /etc/pip.conf <<EOF
 [global]
 index-url=https://www.piwheels.org/simple
 extra-index-url=https://pypi.org/simple
-trusted-host = www.piwheels.org
-               pypi.org
+trusted-host = www.piwheels.org pypi.org
 EOF
 
-# Update pip using the new config
 pip3 install --upgrade pip
-
-# Clear pip cache to ensure fresh downloads from piwheels
 pip3 cache purge
-
-# Now install requirements - they should come from piwheels
 pip3 install -r requirements.txt
 
-# Optionally, force reinstall packages known to cause 'Illegal instruction' if needed
+# Optional: force-reinstall known problematic packages (if still seeing illegal instr)
 # pip3 uninstall -y eventlet flask-socketio requests
 # pip3 install --no-cache-dir --force-reinstall eventlet flask-socketio requests
+
 cd /
 
-echo 'Setting up WiFi AP + Client...'
-# Remove any conflicting dhcp config directory
-rm -rf /etc/dhcp
+# === 9. Networking: Bridge + Virtual Interface (ap@wlan0) ===
 
-# Enable systemd-networkd and systemd-resolved (for managing interfaces and DNS resolution)
-systemctl enable systemd-networkd.service systemd-resolved.service
+# 9.1 NetDev: bridge br0
+cat > /etc/systemd/network/02-br0.netdev <<EOF
+[NetDev]
+Name=br0
+Kind=bridge
+EOF
 
-# Setup hostapd for dedicated AP interface (uap0)
+# 9.2 wlan0 joins bridge (STA interface)
+cat > /etc/systemd/network/08-wlan0.network <<EOF
+[Match]
+Name=wlan0
+[Network]
+Bridge=br0
+LLMNR=no
+MulticastDNS=no
+IPForward=yes
+EOF
+
+# 9.3 eth0 (optional wired client) joins bridge
+cat > /etc/systemd/network/04-eth0.network <<EOF
+[Match]
+Name=eth0
+[Network]
+Bridge=br0
+ConfigureWithoutCarrier=yes
+EOF
+
+# 9.4 br0 gets AP IP
+cat > /etc/systemd/network/16-br0_up.network <<EOF
+[Match]
+Name=br0
+[Network]
+Address=${AP_IP}/24
+IPMasquerade=yes
+EOF
+
+# === 10. hostapd config (binds to ap@wlan0, bridges to br0) ===
 cat > /etc/hostapd/hostapd.conf <<EOF
-interface=uap0
 driver=nl80211
 ssid=${AP_SSID}
+country_code=US
 hw_mode=g
 channel=6
-ieee80211n=1
-wmm_enabled=1
-ht_capab=[HT40][SHORT-GI-20][DSSS_CCK-40]
-macaddr_acl=0
 auth_algs=1
-ignore_broadcast_ssid=0
 wpa=2
 wpa_passphrase=${AP_PASS}
 wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
+bridge=br0
 EOF
-chmod 600 /etc/hostapd/hostapd.conf
+chmod 600 /etc/hostapd/hostapd
 
-# --- IMPROVED SERVICE FOR HOSTAPD ---
-# Define the service more robustly
-cat > /etc/systemd/system/picobrew-accesspoint.service <<EOF
+# === 11. Instance-based accesspoint@.service ===
+cat > /etc/systemd/system/accesspoint@.service <<EOF
 [Unit]
-Description=PICOBREW access point
-After=network-pre.target
-Before=hostapd.service
-Requires=sys-subsystem-net-devices-wlan0.device
-After=sys-subsystem-net-devices-wlan0.device
-Wants=network.target
+Description=Access point for %I
+Wants=wpa_supplicant@%i.service
+After=systemd-networkd.service
+Before=dnsmasq.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-Environment=IFACE=uap0
-ExecStart=/bin/bash -c '/sbin/ip link set wlan0 up && sleep 2 && /sbin/iw dev wlan0 interface add $${IFACE} type __ap && sleep 2 && /sbin/ip addr add ${AP_IP}/24 dev $${IFACE} && /sbin/ip link set $${IFACE} up && /usr/sbin/hostapd -B /etc/hostapd/hostapd.conf && sleep 3 && /usr/sbin/rfkill unblock wlan'
-ExecStop=/bin/bash -c 'pkill -f "hostapd" 2>/dev/null || true; /sbin/iw dev $${IFACE} del 2>/dev/null || true; /sbin/ip addr flush dev $${IFACE} 2>/dev/null || true; /sbin/ip link delete $${IFACE} 2>/dev/null || true; /usr/sbin/rfkill unblock wlan 2>/dev/null || true'
-TimeoutStartSec=30
-TimeoutStopSec=10
+ExecStartPre=/sbin/iw dev %i interface add ap@%i type __ap
+ExecStart=/usr/sbin/hostapd -i ap@%i /etc/hostapd/hostapd.conf
+ExecStopPost=-/sbin/iw dev ap@%i del
+ExecStopPost=/usr/sbin/rfkill unblock wlan
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=sys-subsystem-net-devices-%i.device
 EOF
 
+# Disable default hostapd.service
+systemctl disable hostapd.service
 
-# --- CORRECTED DHCP/DNS SETUP ---
-# Setup dnsmasq for the AP interface (uap0)
+# Enable our instance service for wlan0
+systemctl enable accesspoint@wlan0.service
+
+# === 12. Bind wpa_supplicant@wlan0 to accesspoint@wlan0 ===
+mkdir -p /etc/systemd/system/wpa_supplicant@wlan0.service.d
+cat > /etc/systemd/system/wpa_supplicant@wlan0.service.d/override.conf <<EOF
+[Unit]
+BindsTo=accesspoint@wlan0.service
+After=accesspoint@wlan0.service
+
+[Service]
+ExecStartPost=/bin/ip link set ap@wlan0 up
+ExecStartPost=/usr/sbin/rfkill unblock wlan
+EOF
+
+# === 13. dnsmasq: serve DHCP/DNS on br0 ===
 cat > /etc/dnsmasq.conf <<EOF
-# Basic Configuration
-interface=uap0
+interface=br0
 bind-interfaces
-domain-needed
-bogus-priv
-
-# DHCP Configuration for AP Network
-dhcp-range=192.168.72.100,192.168.72.200,255.255.255.0,24h
-dhcp-option=option:router,${AP_IP}
-dhcp-option=option:dns-server,${AP_IP}
-
-# DNS Redirection for PicoBrew
+domain=picobrew.local
 address=/picobrew.com/${AP_IP}
 address=/www.picobrew.com/${AP_IP}
-
-# Upstream DNS Servers (fallback if needed, but AP serves its own)
 server=8.8.8.8
 server=8.8.4.4
 server=1.1.1.1
-
-# Local DNS
-local=/${AP_SSID}.local/
-domain=${AP_SSID}.local
+dhcp-range=192.168.72.100,192.168.72.200,255.255.255.0,24h
+dhcp-option=option:router,${AP_IP}
+dhcp-option=option:dns-server,${AP_IP}
 EOF
 
-# Ensure dnsmasq service waits for the AP interface
+# Ensure dnsmasq starts after br0 is up
 mkdir -p /etc/systemd/system/dnsmasq.service.d
 cat > /etc/systemd/system/dnsmasq.service.d/override.conf <<EOF
 [Unit]
-After=picobrew-accesspoint.service
-Requires=picobrew-accesspoint.service
-PartOf=picobrew-accesspoint.service
+After=accesspoint@wlan0.service br0.network
+Requires=accesspoint@wlan0.service
 EOF
 
-# --- CLIENT NETWORK CONFIGURATION ---
-# Setup systemd-networkd for wlan0 (client) - Let systemd-networkd manage it
-cat > /etc/systemd/network/08-wlan0.network <<EOF
-[Match]
-Name=wlan0
+systemctl enable dnsmasq
 
-[Network]
-DHCP=yes
-# Ensure LLMNR/MulticastDNS don't interfere with dnsmasq if needed on AP side
-LLMNR=no
-MulticastDNS=no
-IPForward=yes # Allow forwarding if needed for AP internet access later
-EOF
-
-# Setup systemd-networkd for eth0 (client) - Let systemd-networkd manage it
-cat > /etc/systemd/network/04-eth0.network <<EOF
-[Match]
-Name=eth0
-
-[Network]
-DHCP=yes
-LLMNR=no
-MulticastDNS=no
-IPForward=yes # Allow forwarding if needed for AP internet access later
-EOF
-
-# --- DHCPDC CONFIGURATION ---
-# DO NOT deny wlan0/eth0 in dhcpcd.conf if systemd-networkd manages them.
-# dhcpcd should generally handle interfaces *not* managed by systemd-networkd,
-# but we've explicitly told systemd-networkd to manage wlan0 and eth0.
-# Let systemd-networkd be the primary for these, but ensure dhcpcd doesn't conflict.
-# Removing the 'denyinterfaces' lines for wlan0/eth0 from dhcpcd.conf is key.
-# We keep the uap0 static config in dhcpcd.conf *if* dhcpcd needs to manage it,
-# but since hostapd sets its IP, maybe dhcpcd shouldn't manage uap0 at all.
-# Let's remove the uap0 config from dhcpcd.conf entirely, and let hostapd/dnsmasq handle it.
-# This simplifies things.
-
-# Add specific configuration for uap0 to tell dhcpcd to ignore it (if necessary, but probably not)
-# cat >> /etc/dhcpcd.conf <<EOF
-# interface uap0
-# static ip_address=${AP_IP}/24
-# nohook wpa_supplicant
-# EOF
-
-# Instead, ensure dhcpcd doesn't interfere globally less aggressively.
-# The default dhcpcd.conf usually works fine alongside systemd-networkd
-# if .network files are explicit enough.
-# We will not add denyinterfaces lines for wlan0/eth0 here.
-
-# --- RESOLVED CONFIG ---
-# Disable resolved's stub listener to free up port 53 if dnsmasq binds to it
-# dnsmasq will act as the primary resolver on the AP interface
-# This line should already be sufficient
-sed -i 's/.*DNSStubListener=.*/DNSStubListener=no/g' /etc/systemd/resolved.conf
-
-# --- WPA_SUPPLICANT CONFIGURATION ---
-# Enable wpa_supplicant for the STA interface (wlan0)
-# The service file provided by the system should handle the @wlan0 part
-systemctl enable wpa_supplicant@wlan0.service
-
-# Update wpa_supplicant config placement service
-cat > /etc/systemd/system/update_wpa_supplicant.service <<EOF
-[Unit]
-Description=Setup wpa_supplicant config for wlan0
-Before=wpa_supplicant@wlan0.service
-After=systemd-fsck@boot.service # Ensure /boot is mounted
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/bin/bash -c 'if [ -f /boot/wpa_supplicant.conf ]; then mv /boot/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant-wlan0.conf; else cp /etc/wpa_supplicant/wpa_supplicant-wlan0.conf.example /etc/wpa_supplicant/wpa_supplicant-wlan0.conf 2>/dev/null || echo "Using example wpa_supplicant config, edit /etc/wpa_supplicant/wpa_supplicant-wlan0.conf if needed"; fi'
-ExecStartPost=/bin/chmod 600 /etc/wpa_supplicant/wpa_supplicant-wlan0.conf || true
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl enable update_wpa_supplicant.service
-
-echo 'Disabling ipv6...'
+# === 14. Disable IPv6 ===
 cat >> /etc/sysctl.conf <<EOF
 net.ipv6.conf.all.disable_ipv6=1
 net.ipv6.conf.default.disable_ipv6=1
 net.ipv6.conf.lo.disable_ipv6=1
-net.ipv6.conf.eth0.disable_ipv6=1
 net.ipv6.conf.wlan0.disable_ipv6=1
+net.ipv6.conf.eth0.disable_ipv6=1
 EOF
+sysctl -p >/dev/null 2>&1
 
-# Ensure services are enabled
-systemctl enable picobrew-accesspoint.service
-systemctl enable dnsmasq.service
+# === 15. Disable resolved stub listener ===
+sed -i 's/^#*DNSStubListener=.*/DNSStubListener=no/' /etc/systemd/resolved.conf
+ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 
-echo 'Setting up /etc/hosts...'
+# === 16. wpa_supplicant config loader (from /boot) ===
+cat > /etc/systemd/system/update_wpa_supplicant.service <<EOF
+[Unit]
+Description=Copy wpa_supplicant.conf from /boot if present
+ConditionPathExists=/boot/wpa_supplicant.conf
+After=systemd-fsck@boot.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/mv /boot/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
+ExecStartPost=/bin/chmod 600 /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable update_wpa_supplicant.service
+
+# === 17. Hosts file ===
 cat >> /etc/hosts <<EOF
 ${AP_IP}       picobrew.com
 ${AP_IP}       www.picobrew.com
 EOF
 
-echo 'Generating self-signed SSL certs...'
-mkdir -p /etc/nginx/ssl # Use a more standard location
+# === 18. SSL Certificates ===
+mkdir -p /etc/nginx/ssl
 cat > /tmp/req.cnf <<EOF
 [v3_req]
 keyUsage = critical, digitalSignature, keyAgreement
@@ -341,25 +290,35 @@ IP.1 = 127.0.0.1
 IP.2 = ${AP_IP}
 EOF
 
-openssl req -x509 -sha256 -newkey rsa:2048 -nodes -keyout /etc/nginx/ssl/domain.key -days 1825 -out /etc/nginx/ssl/domain.crt -subj "/CN=PicobrewPicoClaw_CA" < /dev/null
-openssl req -newkey rsa:2048 -nodes -subj "/CN=picobrew.com" -keyout /etc/nginx/ssl/server.key -out /tmp/server.csr < /dev/null
-openssl x509 -req -in /tmp/server.csr -CA /etc/nginx/ssl/domain.crt -CAkey /etc/nginx/ssl/domain.key -CAcreateserial -out /etc/nginx/ssl/server.crt -days 1825 -extfile /tmp/req.cnf -extensions v3_req
-cat /etc/nginx/ssl/server.crt /etc/nginx/ssl/domain.crt > /etc/nginx/ssl/bundle.crt
-rm /tmp/req.cnf /tmp/server.csr # Clean up temporary files
+openssl req -x509 -sha256 -newkey rsa:2048 -nodes \
+  -keyout /etc/nginx/ssl/domain.key -days 1825 \
+  -out /etc/nginx/ssl/domain.crt \
+  -subj "/CN=PicobrewPicoClaw_CA" < /dev/null
 
-echo 'Setting up nginx for http and https...'
-# Assuming the picobrew.com.conf file exists in the cloned repo
-NGINX_CONF_PATH="/picobrew_picoclaw/scripts/pi/picobrew.com.conf"
-if [ -f "$NGINX_CONF_PATH" ]; then
-    ln -sf "$NGINX_CONF_PATH" /etc/nginx/sites-available/picobrew.com.conf
-    ln -sf /etc/nginx/sites-available/picobrew.com.conf /etc/nginx/sites-enabled/picobrew.com.conf
-    rm -f /etc/nginx/sites-enabled/default # Remove default site
-    systemctl enable nginx # Ensure nginx is enabled
+openssl req -newkey rsa:2048 -nodes \
+  -subj "/CN=picobrew.com" \
+  -keyout /etc/nginx/ssl/server.key \
+  -out /tmp/server.csr < /dev/null
+
+openssl x509 -req -in /tmp/server.csr \
+  -CA /etc/nginx/ssl/domain.crt -CAkey /etc/nginx/ssl/domain.key -CAcreateserial \
+  -out /etc/nginx/ssl/server.crt -days 1825 -extfile /tmp/req.cnf -extensions v3_req
+
+cat /etc/nginx/ssl/server.crt /etc/nginx/ssl/domain.crt > /etc/nginx/ssl/bundle.crt
+rm -f /tmp/req.cnf /tmp/server.csr
+
+# === 19. Nginx ===
+NGINX_CONF="/picobrew_picoclaw/scripts/pi/picobrew.com.conf"
+if [ -f "$NGINX_CONF" ]; then
+    ln -sf "$NGINX_CONF" /etc/nginx/sites-available/picobrew.com.conf
+    ln -sf /etc/nginx/sites-available/picobrew.com.conf /etc/nginx/sites-enabled/
+    rm -f /etc/nginx/sites-enabled/default
+    systemctl enable nginx
 else
-    echo "Warning: Nginx configuration file $NGINX_CONF_PATH not found!"
+    echo "⚠️ Warning: Nginx config not found at $NGINX_CONF"
 fi
 
-echo 'Setup samba config...'
+# === 20. Samba ===
 cat > /etc/samba/smb.conf <<EOF
 [global]
 workgroup = WORKGROUP
@@ -369,14 +328,12 @@ security = user
 map to guest = bad user
 guest account = nobody
 dns proxy = no
-# Logging
 log file = /var/log/samba/log.%m
 max log size = 1000
 logging = file
 
 [App]
 path = /picobrew_picoclaw
-valid users = @users
 guest ok = yes
 browseable = yes
 public = yes
@@ -385,7 +342,6 @@ write list = @users
 
 [Recipes]
 path = /picobrew_picoclaw/app/recipes
-valid users = @users
 guest ok = yes
 browseable = yes
 public = yes
@@ -394,83 +350,70 @@ write list = @users
 
 [History]
 path = /picobrew_picoclaw/app/sessions
-valid users = @users
 guest ok = yes
 browseable = yes
 public = yes
 writable = yes
 write list = @users
 EOF
-
-# Restart samba services
 systemctl enable smbd nmbd
 
-# --- RC.LOCAL MODIFICATIONS ---
-# Simplified rc.local, focusing on server startup and post-git-update logic
-# Networking setup is handled by systemd services now
-cat > /etc/rc.local <<EOF
+# === 21. rc.local (final boot actions) ===
+cat > /etc/rc.local <<'EOF'
 #!/bin/bash
-# /etc/rc.local - Executed after all multi-user services are started
+# rc.local — runs after all services
 
-echo "Starting PicoClaw post-boot sequence..."
+set -e
 
-# Load environment variables (example values, adjust if needed)
+echo "[rc.local] Starting PicoClaw post-boot..."
+
+# Ensure network is ready
+systemctl daemon-reload
+sleep 2
+
+# Power save off (critical for stability)
+iw wlan0 set power_save off 2>/dev/null || true
+iw ap@wlan0 set power_save off 2>/dev/null || true
+
+# Optional: auto-update (if enabled in config.yaml)
+if [ -f "/picobrew_picoclaw/config.yaml" ] && grep -q "update_boot:\s*[tT]rue" "/picobrew_picoclaw/config.yaml"; then
+    echo "[rc.local] Checking for updates..."
+    cd /picobrew_picoclaw
+    git fetch origin
+    if ! git diff --quiet HEAD origin/HEAD; then
+        echo "[rc.local] Updating code..."
+        git pull origin HEAD || echo "Git pull failed — continuing with current version."
+        pip3 install -r requirements.txt
+        ./scripts/pi/post-git-update.sh 2>&1 | logger -t picoclaw-update
+    fi
+    cd /
+fi
+
+# Start server.py — log to file
 export IMG_RELEASE="${IMG_RELEASE}"
 export IMG_VARIANT="${IMG_VARIANT}"
+export SOURCE_SHA="${GIT_SHA}"
 
-# Toggle off WiFi power management (helpful for AP stability)
-iw wlan0 set power_save off 2>/dev/null || true
-
-# Enable IP forwarding (might be needed depending on desired AP internet access)
-sysctl -w net.ipv4.ip_forward=1 2>/dev/null || true
-
-# Post-git-update logic (if enabled in config)
-if [ -f "/picobrew_picoclaw/config.yaml" ] && grep -q "update_boot:\s*[tT]rue" "/picobrew_picoclaw/config.yaml"; then
-  echo 'Checking for PicoClaw Server updates...'
-  cd /picobrew_picoclaw
-  git fetch origin
-  LOCAL=$(git rev-parse HEAD)
-  REMOTE=$(git rev-parse origin/HEAD)
-  if [ $LOCAL != $REMOTE ]; then
-      echo "Updates found, pulling..."
-      git pull origin HEAD || echo "Git pull failed, continuing with current version."
-      # Reinstall Python deps if needed after update (optional, depends on changes)
-      # pip3 install -r requirements.txt
-      # Run post-update script if it exists
-      ./scripts/pi/post-git-update.sh 2>&1 | logger -t picoclaw-update
-  else
-      echo "No updates found."
-  fi
-  cd /
-fi
-
-# Start the main Python server
-echo "Starting PicoClaw Server (image: \${IMG_RELEASE}_\${IMG_VARIANT})..."
+echo "[rc.local] Starting PicoClaw Server (img: ${IMG_RELEASE}_${IMG_VARIANT}, src: ${SOURCE_SHA})..."
 cd /picobrew_picoclaw
-# Log server output
 nohup python3 server.py 0.0.0.0 8080 > /var/log/picoclaw_server.log 2>&1 &
 SERVER_PID=$!
-echo "PicoClaw Server started with PID: \$SERVER_PID"
+echo "[rc.local] Server PID: $SERVER_PID"
 
-# Wait a moment to check if the server started successfully
-sleep 5
-if kill -0 \$SERVER_PID 2>/dev/null; then
-    echo "PicoClaw Server confirmed running (PID: \$SERVER_PID)."
-    logger -t picoclaw-boot "PicoClaw Server started successfully (PID: \$SERVER_PID)"
+# Verify it's running
+sleep 3
+if kill -0 "$SERVER_PID" 2>/dev/null; then
+    logger -t picoclaw-boot "✅ Server started (PID $SERVER_PID)"
 else
-    echo "Warning: PicoClaw Server may have failed to start. Check /var/log/picoclaw_server.log"
-    logger -t picoclaw-boot "PicoClaw Server failed to start. Check /var/log/picoclaw_server.log"
-    # Optionally, tail the last few lines of the log here
-    tail -n 20 /var/log/picoclaw_server.log
+    logger -t picoclaw-boot "❌ Server failed to start — check /var/log/picoclaw_server.log"
+    tail -n 20 /var/log/picoclaw_server.log | logger -t picoclaw-boot
 fi
 
-# End of rc.local
 exit 0
 EOF
 
 chmod +x /etc/rc.local
+systemctl enable rc-local.service
 
-# Ensure rc-local.service is enabled so rc.local runs on boot
-systemctl enable rc-local.service || true
-
-echo 'Finished custom pi setup!'
+# === 22. Final cleanup ===
+echo '✅ Finished custom pi setup!'
