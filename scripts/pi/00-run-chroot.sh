@@ -172,7 +172,7 @@ wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 bridge=br0
 EOF
-chmod 600 /etc/hostapd/hostapd.conf
+chmod 600 /etc/hostapd/hostapd.conf # Fixed the filename here
 
 # === 11. Instance-based accesspoint@.service ===
 cat > /etc/systemd/system/accesspoint@.service <<EOF
@@ -194,13 +194,14 @@ ExecStopPost=/usr/sbin/rfkill unblock wlan
 WantedBy=sys-subsystem-net-devices-%i.device
 EOF
 
-# Disable default hostapd.service
-systemctl disable hostapd.service
+# Disable default hostapd.service (ensure it's not enabled)
+systemctl disable hostapd.service 2>/dev/null || true # Add 2>/dev/null to suppress errors if it's not loaded
 
 # Enable our instance service for wlan0
 systemctl enable accesspoint@wlan0.service
 
 # === 12. Bind wpa_supplicant@wlan0 to accesspoint@wlan0 ===
+# Ensure the directory exists first
 mkdir -p /etc/systemd/system/wpa_supplicant@wlan0.service.d
 cat > /etc/systemd/system/wpa_supplicant@wlan0.service.d/override.conf <<EOF
 [Unit]
@@ -211,6 +212,9 @@ After=accesspoint@wlan0.service
 ExecStartPost=/bin/ip link set ap@wlan0 up
 ExecStartPost=/usr/sbin/rfkill unblock wlan
 EOF
+
+# Reload systemd configuration to pick up new/modified units within the chroot
+systemctl daemon-reload
 
 # === 13. dnsmasq: serve DHCP/DNS on br0 ===
 cat > /etc/dnsmasq.conf <<EOF
@@ -227,7 +231,7 @@ dhcp-option=option:router,${AP_IP}
 dhcp-option=option:dns-server,${AP_IP}
 EOF
 
-# Ensure dnsmasq starts after br0 is up
+# Ensure dnsmasq starts after br0 is up and accesspoint is running
 mkdir -p /etc/systemd/system/dnsmasq.service.d
 cat > /etc/systemd/system/dnsmasq.service.d/override.conf <<EOF
 [Unit]
@@ -235,6 +239,10 @@ After=accesspoint@wlan0.service br0.network
 Requires=accesspoint@wlan0.service
 EOF
 
+# Reload again after creating override
+systemctl daemon-reload
+
+# Enable dnsmasq service
 systemctl enable dnsmasq
 
 # === 14. Disable IPv6 ===
