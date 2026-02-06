@@ -45,6 +45,21 @@ usermod -a -G bluetooth pi || true
 systemctl restart dbus || true
 
 echo 'Load default wpa_supplicant.conf...'
+cat > /etc/wpa_supplicant/wpa_supplicant-wlan0.conf.example <<EOF
+country=US
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+p2p_disabled=1
+
+network={
+    ssid="YOUR_WIFI_NAME"
+    psk="YOUR_WIFI_PASSWORD"
+    key_mgmt=WPA-PSK
+    freq_list=2412 2417 2422 2427 2432 2437 2442 2447 2452 2457 2462
+}
+EOF
+
+# Also write to /boot so user can edit before first boot
 cat > /boot/wpa_supplicant.conf <<EOF
 country=US
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
@@ -106,12 +121,13 @@ cd /picobrew_picoclaw
 # Create config.yaml from example (config.yaml is gitignored)
 cp config.example.yaml config.yaml
 
-# Configure pip to use piwheels.org for Raspberry Pi compatible wheels (ARMv6/v7/v8)
-# This is critical for Pi Zero W (ARMv6) compatibility
+# Configure pip to use piwheels.org as PRIMARY source for Raspberry Pi compatible wheels (ARMv6/v7/v8)
+# This is critical for Pi Zero W (ARMv6) - piwheels MUST be primary, not fallback
 mkdir -p /etc/pip.conf.d
 cat > /etc/pip.conf <<EOF
 [global]
-extra-index-url=https://www.piwheels.org/simple
+index-url=https://www.piwheels.org/simple
+extra-index-url=https://pypi.org/simple
 EOF
 
 # Install Python packages - piwheels provides pre-built ARMv6 wheels
@@ -253,7 +269,8 @@ After=picobrew-accesspoint.service
 Requires=picobrew-accesspoint.service
 
 [Service]
-ExecStartPre=/bin/sleep 2
+ExecStartPre=/bin/sleep 5
+ExecStartPre=/bin/bash -c 'for i in {1..10}; do if ip link show uap0 2>/dev/null | grep -q UP; then break; fi; sleep 1; done'
 EOF
 
 
