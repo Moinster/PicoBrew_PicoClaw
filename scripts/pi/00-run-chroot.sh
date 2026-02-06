@@ -88,12 +88,15 @@ apt -y update
 apt -y upgrade
 
 # https://raspberrypi.stackexchange.com/questions/89803/access-point-as-wifi-router-repeater-optional-with-bridge
-echo 'Removing default networking...'
-apt -y --autoremove purge ifupdown dhcpcd5 isc-dhcp-client isc-dhcp-common rsyslog avahi-daemon
-apt-mark hold ifupdown dhcpcd5 isc-dhcp-client isc-dhcp-common rsyslog raspberrypi-net-mods openresolv avahi-daemon libnss-mdns
+echo 'Removing conflicting networking packages (keeping dhcpcd)...'
+apt -y --autoremove purge ifupdown isc-dhcp-client isc-dhcp-common rsyslog avahi-daemon
+apt-mark hold ifupdown isc-dhcp-client isc-dhcp-common rsyslog raspberrypi-net-mods openresolv avahi-daemon
+
 echo 'Installing required packages...'
 # python3-venv removed - not needed for single-purpose device
-apt -y install libnss-resolve hostapd dnsmasq dnsutils samba git python3 python3-pip nginx openssh-server bluez
+apt -y install dhcpcd5 libnss-resolve hostapd dnsmasq dnsutils samba git python3 python3-pip nginx openssh-server bluez
+systemctl enable dhcpcd
+
 
 echo 'Installing PicoClaw Server...'
 cd /
@@ -117,7 +120,8 @@ pip3 install -r requirements.txt
 cd /
 
 echo 'Setting up WiFi AP + Client...'
-rm -rf /etc/network /etc/dhcp
+rm -rf /etc/dhcp
+
 systemctl enable systemd-networkd.service systemd-resolved.service
 
 # Setup hostapd for dedicated AP interface (uap0)
@@ -137,8 +141,8 @@ chmod 600 /etc/hostapd/hostapd.conf
 cat > /etc/systemd/system/picobrew-accesspoint.service <<EOF
 [Unit]
 Description=PICOBREW access point
-After=network.target
-Wants=network-online.target
+After=dhcpcd.service wlan0.device
+Wants=dhcpcd.service
 
 [Service]
 Type=simple
@@ -188,13 +192,18 @@ LLMNR=no
 MulticastDNS=no
 EOF
 
-cat > /etc/systemd/network/10-uap0.network <<EOF
-[Match]
-Name=uap0
-[Network]
-Address=${AP_IP}/24
-IPMasquerade=yes
+cat >> /etc/dhcpcd.conf <<EOF
+
+# dhcpcd should ONLY manage the AP interface
+denyinterfaces wlan0
+denyinterfaces eth0
+
+interface uap0
+static ip_address=${AP_IP}/24
+nohook wpa_supplicant
 EOF
+
+
 
 # eth0 gets DHCP if connected (for debugging/updates)
 cat > /etc/systemd/network/04-eth0.network <<EOF
@@ -228,6 +237,14 @@ interface=uap0
 bind-interfaces
 dhcp-range=192.168.72.100,192.168.72.200,255.255.255.0,24h
 EOF
+
+mkdir -p /etc/systemd/system/dnsmasq.service.d
+cat > /etc/systemd/system/dnsmasq.service.d/override.conf <<EOF
+[Unit]
+After=picobrew-accesspoint.service
+Requires=picobrew-accesspoint.service
+EOF
+
 
 systemctl enable dnsmasq.service
 
