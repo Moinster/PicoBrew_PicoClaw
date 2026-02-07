@@ -78,7 +78,7 @@ apt -y update
 # Consider using --no-install-recommends for some packages to reduce deps if needed
 apt -y upgrade
 
-# 🔥 CRITICAL: Remove dhcpcd5 and all conflicting net tools (same as Bullseye)
+# CRITICAL: Remove dhcpcd5 and all conflicting net tools (same as Bullseye)
 echo 'Purging dhcpcd5 and legacy networking...'
 apt -y --autoremove purge \
     ifupdown dhcpcd5 isc-dhcp-client isc-dhcp-common rsyslog avahi-daemon libnss-mdns
@@ -86,7 +86,8 @@ apt-mark hold \
     ifupdown dhcpcd5 isc-dhcp-client isc-dhcp-common rsyslog raspberrypi-net-mods openresolv avahi-daemon libnss-mdns
 
 echo 'Installing required packages...'
-apt -y install \
+# Use --no-install-recommends for network-related packages to avoid potential faulty deps like crda
+apt -y install --no-install-recommends \
     libnss-resolve hostapd dnsmasq dnsutils samba git python3 python3-pip nginx openssh-server bluez
 
 systemctl enable systemd-networkd systemd-resolved
