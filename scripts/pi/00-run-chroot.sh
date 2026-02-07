@@ -98,7 +98,7 @@ systemctl enable systemd-networkd systemd-resolved
 
 
 
-cp config.example.yaml config.yaml
+
 
 # === 8. pip: FORCE piwheels as primary (ARMv6/v7 fix for Bookworm) ===
 mkdir -p /etc/pip.conf.d
@@ -381,6 +381,17 @@ cat > /etc/rc.local <<'EOF'
 set -e # Exit on any error
 
 echo "[rc.local] Starting PicoClaw post-boot sequence..."
+
+# Ensure config.yaml exists
+if [ ! -f /picobrew_picoclaw/config.yaml ]; then
+    if [ -f /picobrew_picoclaw/config.example.yaml ]; then
+        cp /picobrew_picoclaw/config.example.yaml /picobrew_picoclaw/config.yaml
+        chown pi:pi /picobrew_picoclaw/config.yaml
+        echo "[rc.local] Created config.yaml from example"
+    else
+        echo "[rc.local] ❌ config.example.yaml missing!"
+    fi
+fi
 
 # Ensure systemd manager configuration is up-to-date (optional, might help in rare cases)
 systemctl daemon-reload 2>/dev/null || true # Ignore errors in rc.local if systemctl unavailable momentarily
