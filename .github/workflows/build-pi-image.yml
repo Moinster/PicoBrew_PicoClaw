@@ -109,7 +109,7 @@ jobs:
           --exclude='.git' \
           --exclude='.github' \
           --exclude='*.zip' \
-           ../PicoBrew_PicoClaw/ \
+          ../ \
           stage2/99-picoclaw/files/picobrew_picoclaw/
 
       - name: Build image
