@@ -1,5 +1,6 @@
 #!/bin/bash
-# AP for Pico devices — Pi Zero W STA+AP using bridge (br0) and ap@wlan0
+# AP for Pico devices - Pi Zero W STA+AP using bridge (br0) and ap@wlan0
+# Target: Raspberry Pi OS Bookworm (Debian 12, 32-bit)
 # SSID Must be > 8 Chars
 AP_IP="192.168.72.1"
 AP_SSID="PICOBREW"
@@ -7,14 +8,14 @@ AP_PASS="PICOBREW"
 
 export IMG_NAME="PICOBREW_PICOCLAW"
 export IMG_RELEASE="beta7"
-export IMG_VARIANT="${IMG_VARIANT:-latest}"
+export IMG_VARIANT="${IMG_VARIANT:-latest}" # Default to 'latest' if not set by YAML
 export GIT_SHA='$(git rev-parse --short HEAD)'
 
 # GitHub repository (overrideable)
 GIT_REPO="${GIT_REPO:-https://github.com/Moinster/PicoBrew_PicoClaw.git}"
 
-# === 1. Disable first-boot wizard ===
-echo 'Disabling first-boot wizard...'
+# === 1. Disable first-boot wizard (if present in Bookworm image) ===
+echo 'Disabling first-boot wizard (if applicable)...'
 systemctl disable userconfig.service || true
 systemctl mask userconfig.service || true
 rm -f /etc/xdg/autostart/piwiz.desktop || true
@@ -29,6 +30,7 @@ fi
 # === 2. Bluetooth & UART ===
 echo 'Making bluetooth accessible without being root...'
 if command -v setcap >/dev/null 2>&1; then
+    # Attempt setcap (may fail in chroot, which is okay)
     setcap cap_net_raw+eip /usr/bin/python3 || true
 fi
 usermod -a -G bluetooth pi || true
@@ -55,20 +57,14 @@ EOF
 # Copy to /etc as fallback (will be replaced by update_wpa_supplicant.service if /boot exists)
 cp /boot/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant-wlan0.conf.example
 
-# === 4. Disable apt timers ===
+# === 4. Disable apt timers (optional, good practice) ===
 echo 'Disabling apt-daily timers...'
 systemctl stop apt-daily.timer apt-daily-upgrade.timer
 systemctl disable apt-daily.timer apt-daily-upgrade.timer
 
-# === 5. WiFi firmware (optional stable revert) ===
-if [[ "${IMG_VARIANT}" == "stable" ]]; then
-    echo 'Reverting to stable WiFi firmware (rpt4)...'
-    dpkg --purge firmware-brcm80211 || true
-    wget -q http://archive.raspberrypi.org/debian/pool/main/f/firmware-nonfree/firmware-brcm80211_20190114-1+rpt4_all.deb
-    dpkg -i firmware-brcm80211_20190114-1+rpt4_all.deb
-    apt-mark hold firmware-brcm80211
-    rm -f firmware-brcm80211_20190114-1+rpt4_all.deb
-fi
+# === 5. (Removed) WiFi firmware (Bookworm ships modern firmware) ===
+# The old stable/latest logic for firmware-brcm80211 is removed.
+# Bookworm's default firmware should be sufficient for Pi Zero W AP mode.
 
 # === 6. Update & install core packages — REMOVE dhcpcd5! ===
 echo 'Updating packages...'
@@ -79,9 +75,10 @@ echo "samba-common samba-common/dhcp boolean true" | debconf-set-selections
 echo "samba-common samba-common/do_debconf boolean true" | debconf-set-selections
 
 apt -y update
+# Consider using --no-install-recommends for some packages to reduce deps if needed
 apt -y upgrade
 
-# 🔥 CRITICAL: Remove dhcpcd5 and all conflicting net tools
+# 🔥 CRITICAL: Remove dhcpcd5 and all conflicting net tools (same as Bullseye)
 echo 'Purging dhcpcd5 and legacy networking...'
 apt -y --autoremove purge \
     ifupdown dhcpcd5 isc-dhcp-client isc-dhcp-common rsyslog avahi-daemon libnss-mdns
@@ -101,7 +98,7 @@ cd /picobrew_picoclaw
 
 cp config.example.yaml config.yaml
 
-# === 8. pip: FORCE piwheels as primary (ARMv6 fix) ===
+# === 8. pip: FORCE piwheels as primary (ARMv6/v7 fix for Bookworm) ===
 mkdir -p /etc/pip.conf.d
 cat > /etc/pip.conf <<EOF
 [global]
@@ -114,7 +111,7 @@ pip3 install --upgrade pip
 pip3 cache purge
 pip3 install -r requirements.txt
 
-# Optional: force-reinstall known problematic packages (if still seeing illegal instr)
+# Optional: force-reinstall known problematic packages (if still seeing illegal instr later)
 # pip3 uninstall -y eventlet flask-socketio requests
 # pip3 install --no-cache-dir --force-reinstall eventlet flask-socketio requests
 
@@ -172,10 +169,9 @@ wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 bridge=br0
 EOF
-chmod 600 /etc/hostapd/hostapd.conf # Fixed the filename here
+chmod 600 /etc/hostapd/hostapd.conf
 
-# === 11. Instance-based accesspoint@.service ===
-# Ensure wlan0 is up before creating the virtual AP interface
+# === 11. Instance-based accesspoint@.service (runs on target) ===
 cat > /etc/systemd/system/accesspoint@.service <<EOF
 [Unit]
 Description=Access point for %I
@@ -186,7 +182,7 @@ Before=dnsmasq.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# Bring wlan0 up and wait briefly to ensure it's ready before creating ap@wlan0
+# Ensure wlan0 is up before attempting to create the virtual AP interface
 ExecStartPre=/bin/sh -c 'ip link set %i up && sleep 2'
 ExecStartPre=/sbin/iw dev %i interface add ap@%i type __ap
 ExecStart=/usr/sbin/hostapd -i ap@%i /etc/hostapd/hostapd.conf
@@ -197,11 +193,11 @@ ExecStopPost=/usr/sbin/rfkill unblock wlan
 WantedBy=sys-subsystem-net-devices-%i.device
 EOF
 
-# Disable default hostapd.service (ensure it's not enabled on the target system by default)
+# Mask the default hostapd.service to prevent conflicts
 systemctl mask hostapd.service 2>/dev/null || true
+# Do NOT enable accesspoint@wlan0.service here in chroot
 
-# === 12. Bind wpa_supplicant@wlan0 to accesspoint@wlan0 ===
-# Ensure the directory exists first
+# === 12. Bind wpa_supplicant@wlan0 to accesspoint@wlan0 (runs on target) ===
 mkdir -p /etc/systemd/system/wpa_supplicant@wlan0.service.d
 cat > /etc/systemd/system/wpa_supplicant@wlan0.service.d/override.conf <<EOF
 [Unit]
@@ -212,8 +208,9 @@ After=accesspoint@wlan0.service
 ExecStartPost=/bin/ip link set ap@wlan0 up
 ExecStartPost=/usr/sbin/rfkill unblock wlan
 EOF
+# Do NOT enable wpa_supplicant@wlan0.service here in chroot
 
-# === 13. dnsmasq: serve DHCP/DNS on br0 ===
+# === 13. dnsmasq: serve DHCP/DNS on br0 (runs on target) ===
 cat > /etc/dnsmasq.conf <<EOF
 interface=br0
 bind-interfaces
@@ -236,7 +233,7 @@ After=accesspoint@wlan0.service br0.network
 Requires=accesspoint@wlan0.service
 EOF
 
-# Enable dnsmasq for SysV compatibility in the final image using update-rc.d
+# Enable dnsmasq for SysV compatibility in the final image using update-rc.d (safe in chroot)
 update-rc.d dnsmasq defaults
 
 # === 14. Disable IPv6 ===
@@ -253,11 +250,24 @@ sysctl -p >/dev/null 2>&1
 sed -i 's/^#*DNSStubListener=.*/DNSStubListener=no/' /etc/systemd/resolved.conf
 ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 
-# === 16. wpa_supplicant config loader (from /boot) ===
-# ... (existing content for update_wpa_supplicant.service) ...
-# This service is enabled later, which is fine as it's a custom one.
-# Manually create the systemd enable symlink for update_wpa_supplicant.service in the chroot
-# This simulates 'systemctl enable' for the custom service within the build environment.
+# === 16. wpa_supplicant config loader (runs on target) ===
+cat > /etc/systemd/system/update_wpa_supplicant.service <<EOF
+[Unit]
+Description=Copy wpa_supplicant.conf from /boot if present
+ConditionPathExists=/boot/wpa_supplicant.conf
+After=systemd-fsck@boot.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/mv /boot/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
+ExecStartPost=/bin/chmod 600 /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
+
+[Install]
+WantedBy=multi-user.target
+EOF
+# Enable update_wpa_supplicant.service for the target system.
+# Simulate systemctl enable using symlinks in chroot.
 ln -sf /etc/systemd/system/update_wpa_supplicant.service /etc/systemd/system/multi-user.target.wants/update_wpa_supplicant.service
 
 # === 17. Hosts file ===
@@ -306,7 +316,7 @@ if [ -f "$NGINX_CONF" ]; then
     rm -f /etc/nginx/sites-enabled/default
     systemctl enable nginx
 else
-    echo " Warning: Nginx config not found at $NGINX_CONF"
+    echo "⚠️ Warning: Nginx config not found at $NGINX_CONF"
 fi
 
 # === 20. Samba ===
@@ -347,10 +357,11 @@ public = yes
 writable = yes
 write list = @users
 EOF
-systemctl enable smbd nmbd
+# Enable samba services for the target system using update-rc.d
+update-rc.d smbd defaults
+update-rc.d nmbd defaults
 
 # === 21. rc.local (final boot actions) ===
-# Improve rc.local to handle potential issues during first boot
 cat > /etc/rc.local <<'EOF'
 #!/bin/bash
 # rc.local — runs after all services
@@ -359,7 +370,7 @@ set -e # Exit on any error
 
 echo "[rc.local] Starting PicoClaw post-boot sequence..."
 
-# Ensure systemd manager configuration is up-to-date
+# Ensure systemd manager configuration is up-to-date (optional, might help in rare cases)
 systemctl daemon-reload 2>/dev/null || true # Ignore errors in rc.local if systemctl unavailable momentarily
 
 # Power save off (critical for stability)
@@ -381,9 +392,6 @@ if [ ! -f "$FIRST_BOOT_MARKER" ]; then
     # Create marker file to prevent reinstall on subsequent boots
     touch "$FIRST_BOOT_MARKER"
     echo "[rc.local] Python packages verified/reinstalled."
-    # Optionally restart rc-local to run the server start logic cleanly after reinstalls
-    # This is a bit unusual but ensures server.py runs after deps are fixed in the same boot.
-    # Alternatively, just continue below.
 fi
 
 # Optional: auto-update (if enabled in config.yaml) - ensure internet access first
@@ -436,11 +444,8 @@ EOF
 
 chmod +x /etc/rc.local
 
-# Enable rc-local.service for the TARGET system.
-# pi-gen typically handles rc.local compatibility if the script exists and systemd-sysv is installed.
-# We can try update-rc.d which manages the SysV links that systemd reads on boot.
-# This is the safest way to enable rc.local within the chroot environment.
+# Enable rc-local.service for the TARGET system using update-rc.d (safe in chroot)
 update-rc.d rc.local defaults
 
 # === 22. Final cleanup ===
-echo ' Finished custom pi setup!'
+echo '✅ Finished custom pi setup! (Bookworm version)'
