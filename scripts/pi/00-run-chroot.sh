@@ -93,13 +93,8 @@ apt -y install --no-install-recommends \
 systemctl enable systemd-networkd systemd-resolved
 
 # === 7. Install PicoClaw Server ===
-# === PicoClaw application (vendored) ===
-if [ ! -d /picobrew_picoclaw ]; then
-    echo "❌ PicoClaw application directory missing!"
-    exit 1
-fi
-
-cd /picobrew_picoclaw
+# PicoClaw files are copied later by pi-gen (stage files/)
+# Do not access /picobrew_picoclaw during chroot
 
 
 
