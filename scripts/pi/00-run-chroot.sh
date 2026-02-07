@@ -9,7 +9,7 @@ AP_PASS="PICOBREW"
 export IMG_NAME="PICOBREW_PICOCLAW"
 export IMG_RELEASE="beta7"
 export IMG_VARIANT="${IMG_VARIANT:-latest}" # Default to 'latest' if not set by YAML
-export GIT_SHA='$(git rev-parse --short HEAD)'
+export GIT_SHA="image-build-${IMG_RELEASE}"
 
 # GitHub repository (overrideable)
 GIT_REPO="${GIT_REPO:-https://github.com/Moinster/PicoBrew_PicoClaw.git}"
