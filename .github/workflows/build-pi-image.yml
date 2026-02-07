@@ -106,11 +106,11 @@ jobs:
 
           # Rsync the repo contents into pi-gen
           rsync -a \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='*.zip' \
-            ../ \
-            stage2/99-picoclaw/files/picobrew_picoclaw/
+          --exclude='.git' \
+          --exclude='.github' \
+          --exclude='*.zip' \
+           ../PicoBrew_PicoClaw/ \
+          stage2/99-picoclaw/files/picobrew_picoclaw/
 
       - name: Build image
         run: |
