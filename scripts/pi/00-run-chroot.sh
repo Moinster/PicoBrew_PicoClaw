@@ -93,9 +93,15 @@ apt -y install --no-install-recommends \
 systemctl enable systemd-networkd systemd-resolved
 
 # === 7. Install PicoClaw Server ===
-cd /
-git clone "${GIT_REPO}" picobrew_picoclaw
+# === PicoClaw application (vendored) ===
+if [ ! -d /picobrew_picoclaw ]; then
+    echo "❌ PicoClaw application directory missing!"
+    exit 1
+fi
+
 cd /picobrew_picoclaw
+
+
 
 cp config.example.yaml config.yaml
 
