@@ -97,6 +97,21 @@ jobs:
           sed -i 's|https://github.com/chiefwigms/picobrew_pico.git|https://github.com/${{ github.repository }}.git|g' \
             stage2/99-picoclaw/00-run-chroot.sh
 
+      - name: Vendor PicoClaw repo into pi-gen
+        run: |
+          cd pi-gen
+
+          # Create files directory for our custom stage
+          mkdir -p stage2/99-picoclaw/files/picobrew_picoclaw
+
+          # Rsync the repo contents into pi-gen
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='*.zip' \
+            ../ \
+            stage2/99-picoclaw/files/picobrew_picoclaw/
+
       - name: Build image
         run: |
           cd pi-gen
