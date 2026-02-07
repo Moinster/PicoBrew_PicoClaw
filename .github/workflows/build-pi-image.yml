@@ -53,27 +53,7 @@ jobs:
           # Use the bookworm branch - main branch is for Bookworm and has incompatible package names
           git clone --depth 1 --branch bookworm https://github.com/RPi-Distro/pi-gen.git  
 
-      # NEW STEP: Remove 'crda' from pi-gen's default package list
-      - name: Remove crda from pi-gen package list
-        run: |
-          cd pi-gen
-          # Find the file containing the package list in stage2/01-sys-tweaks
-          # Usually it's just 'packages'
-          PKGLIST_FILE="stage2/01-sys-tweaks/packages"
-          if [ -f "$PKGLIST_FILE" ]; then
-              echo "Found package list file: $PKGLIST_FILE"
-              # Print original content for verification (optional)
-              echo "Original content:"
-              cat "$PKGLIST_FILE"
-              # Remove 'crda' from the file
-              sed -i '/^crda$/d' "$PKGLIST_FILE"
-              # Print modified content for verification (optional)
-              echo "Modified content:"
-              cat "$PKGLIST_FILE"
-          else
-              echo "Error: Expected package list file '$PKGLIST_FILE' not found!"
-              exit 1
-          fi
+
 
       - name: Configure pi-gen
         run: |
@@ -81,10 +61,8 @@ jobs:
           
           # Determine variant: from workflow input or default to latest for tag builds
           # Using 'latest' because 'stable' downloads old 2019 Buster firmware that doesn't work on Bullseye
-          VARIANT="${{ github.event.inputs.variant }}"
-          if [ -z "$VARIANT" ]; then
-            VARIANT="latest"
-          fi
+          VARIANT="${{ github.event.inputs.variant || 'latest' }}"
+
           
           # Create config - using Bookworm
           
