@@ -435,10 +435,12 @@ exit 0
 EOF
 
 chmod +x /etc/rc.local
-# Manually create the systemd enable symlink for rc-local in the chroot (simulate systemctl enable)
-# This ensures rc-local runs on the target system.
-ln -sf /etc/rc.local /etc/systemd/system/rc-local.service
-ln -sf /etc/systemd/system/rc-local.service /etc/systemd/system/multi-user.target.wants/rc-local.service
+
+# Enable rc-local.service for the TARGET system.
+# pi-gen typically handles rc.local compatibility if the script exists and systemd-sysv is installed.
+# We can try update-rc.d which manages the SysV links that systemd reads on boot.
+# This is the safest way to enable rc.local within the chroot environment.
+update-rc.d rc.local defaults
 
 # === 22. Final cleanup ===
 echo ' Finished custom pi setup!'
