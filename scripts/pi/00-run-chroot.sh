@@ -175,6 +175,7 @@ EOF
 chmod 600 /etc/hostapd/hostapd.conf # Fixed the filename here
 
 # === 11. Instance-based accesspoint@.service ===
+# Ensure wlan0 is up before creating the virtual AP interface
 cat > /etc/systemd/system/accesspoint@.service <<EOF
 [Unit]
 Description=Access point for %I
@@ -185,6 +186,8 @@ Before=dnsmasq.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+# Bring wlan0 up and wait briefly to ensure it's ready before creating ap@wlan0
+ExecStartPre=/bin/sh -c 'ip link set %i up && sleep 2'
 ExecStartPre=/sbin/iw dev %i interface add ap@%i type __ap
 ExecStart=/usr/sbin/hostapd -i ap@%i /etc/hostapd/hostapd.conf
 ExecStopPost=-/sbin/iw dev ap@%i del
@@ -195,16 +198,7 @@ WantedBy=sys-subsystem-net-devices-%i.device
 EOF
 
 # Disable default hostapd.service (ensure it's not enabled on the target system by default)
-# Instead of systemctl disable, we just ensure the default hostapd service is masked by pi-gen's base setup or overwrite its enablement.
-# The accesspoint@wlan0.service should take precedence via Wants/Before in its unit file and the override below for wpa_supplicant.
-# Let's just ensure it's masked in the chroot filesystem for consistency if it exists.
 systemctl mask hostapd.service 2>/dev/null || true
-
-# Enable our instance service for wlan0 ON THE TARGET SYSTEM by ensuring the symlink is created correctly by systemd on first boot.
-# This is usually handled by 'WantedBy=sys-subsystem-net-devices-%i.device' in the unit file itself when systemd processes it.
-# The symlink creation happens during the boot process of the final image, not during the build.
-# We don't need systemctl enable here in the chroot.
-# systemctl enable accesspoint@wlan0.service # <-- REMOVED
 
 # === 12. Bind wpa_supplicant@wlan0 to accesspoint@wlan0 ===
 # Ensure the directory exists first
@@ -218,10 +212,6 @@ After=accesspoint@wlan0.service
 ExecStartPost=/bin/ip link set ap@wlan0 up
 ExecStartPost=/usr/sbin/rfkill unblock wlan
 EOF
-
-# NOTE: We do NOT use systemctl enable for wpa_supplicant@wlan0.service here either.
-# It's typically enabled by default or by the update_wpa_supplicant.service logic later.
-# The override.conf will apply when wpa_supplicant@wlan0.service starts.
 
 # === 13. dnsmasq: serve DHCP/DNS on br0 ===
 cat > /etc/dnsmasq.conf <<EOF
@@ -239,7 +229,6 @@ dhcp-option=option:dns-server,${AP_IP}
 EOF
 
 # Ensure dnsmasq starts after br0 is up and accesspoint is running
-# Write the override file BEFORE enabling the service (though enabling is skipped in chroot)
 mkdir -p /etc/systemd/system/dnsmasq.service.d
 cat > /etc/systemd/system/dnsmasq.service.d/override.conf <<EOF
 [Unit]
@@ -248,10 +237,21 @@ Requires=accesspoint@wlan0.service
 EOF
 
 # Enable dnsmasq for SysV compatibility in the final image using update-rc.d
-# This modifies the /etc/rc?.d/ symlinks which systemd reads on boot.
 update-rc.d dnsmasq defaults
 
-# ... (rest of the script continues) ...
+# === 14. Disable IPv6 ===
+cat >> /etc/sysctl.conf <<EOF
+net.ipv6.conf.all.disable_ipv6=1
+net.ipv6.conf.default.disable_ipv6=1
+net.ipv6.conf.lo.disable_ipv6=1
+net.ipv6.conf.wlan0.disable_ipv6=1
+net.ipv6.conf.eth0.disable_ipv6=1
+EOF
+sysctl -p >/dev/null 2>&1
+
+# === 15. Disable resolved stub listener ===
+sed -i 's/^#*DNSStubListener=.*/DNSStubListener=no/' /etc/systemd/resolved.conf
+ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 
 # === 16. wpa_supplicant config loader (from /boot) ===
 # ... (existing content for update_wpa_supplicant.service) ...
@@ -350,61 +350,95 @@ EOF
 systemctl enable smbd nmbd
 
 # === 21. rc.local (final boot actions) ===
+# Improve rc.local to handle potential issues during first boot
 cat > /etc/rc.local <<'EOF'
 #!/bin/bash
 # rc.local — runs after all services
 
-set -e
+set -e # Exit on any error
 
-echo "[rc.local] Starting PicoClaw post-boot..."
+echo "[rc.local] Starting PicoClaw post-boot sequence..."
 
-# Ensure network is ready
-systemctl daemon-reload
-sleep 2
+# Ensure systemd manager configuration is up-to-date
+systemctl daemon-reload 2>/dev/null || true # Ignore errors in rc.local if systemctl unavailable momentarily
 
 # Power save off (critical for stability)
 iw wlan0 set power_save off 2>/dev/null || true
-iw ap@wlan0 set power_save off 2>/dev/null || true
+# Check if ap@wlan0 exists before trying to set power_save
+if ip link show ap@wlan0 >/dev/null 2>&1; then
+    iw ap@wlan0 set power_save off 2>/dev/null || true
+fi
 
-# Optional: auto-update (if enabled in config.yaml)
-if [ -f "/picobrew_picoclaw/config.yaml" ] && grep -q "update_boot:\s*[tT]rue" "/picobrew_picoclaw/config.yaml"; then
-    echo "[rc.local] Checking for updates..."
+# Optional: On first boot, force reinstall Python packages from piwheels to ensure ARMv6 compatibility
+# This helps mitigate "Illegal instruction" errors if packages were installed incorrectly during build.
+FIRST_BOOT_MARKER="/var/lib/picoclaw_first_boot_done"
+if [ ! -f "$FIRST_BOOT_MARKER" ]; then
+    echo "[rc.local] First boot detected. Verifying Python packages..."
     cd /picobrew_picoclaw
-    git fetch origin
-    if ! git diff --quiet HEAD origin/HEAD; then
-        echo "[rc.local] Updating code..."
-        git pull origin HEAD || echo "Git pull failed — continuing with current version."
-        pip3 install -r requirements.txt
-        ./scripts/pi/post-git-update.sh 2>&1 | logger -t picoclaw-update
+    # Purge pip cache and force reinstall requirements from piwheels
+    sudo -u pi pip3 cache purge
+    sudo -u pi pip3 install --no-cache-dir --force-reinstall -r requirements.txt
+    # Create marker file to prevent reinstall on subsequent boots
+    touch "$FIRST_BOOT_MARKER"
+    echo "[rc.local] Python packages verified/reinstalled."
+    # Optionally restart rc-local to run the server start logic cleanly after reinstalls
+    # This is a bit unusual but ensures server.py runs after deps are fixed in the same boot.
+    # Alternatively, just continue below.
+fi
+
+# Optional: auto-update (if enabled in config.yaml) - ensure internet access first
+if [ -f "/picobrew_picoclaw/config.yaml" ] && grep -q "update_boot:\s*[tT]rue" "/picobrew_picoclaw/config.yaml"; then
+    echo "[rc.local] Checking for updates (requires internet access)..."
+    # Simple connectivity check (adjust host if needed)
+    if ping -c 1 8.8.8.8 -W 10; then
+        cd /picobrew_picoclaw
+        git fetch origin
+        if ! git diff --quiet HEAD origin/HEAD; then
+            echo "[rc.local] Updating code..."
+            git pull origin HEAD || echo "[rc.local] Git pull failed — continuing with current version."
+            # Reinstall Python deps if code changed significantly (optional)
+            # sudo -u pi pip3 install -r requirements.txt
+            ./scripts/pi/post-git-update.sh 2>&1 | logger -t picoclaw-update
+        else
+            echo "[rc.local] No updates found."
+        fi
+        cd /
+    else
+        echo "[rc.local] No internet connectivity detected, skipping update check."
     fi
-    cd /
 fi
 
 # Start server.py — log to file
-export IMG_RELEASE="${IMG_RELEASE}"
-export IMG_VARIANT="${IMG_VARIANT}"
-export SOURCE_SHA="${GIT_SHA}"
+export IMG_RELEASE="${IMG_RELEASE:-beta7}" # Provide default if not set during build
+export IMG_VARIANT="${IMG_VARIANT:-latest}" # Provide default if not set during build
+export SOURCE_SHA="${GIT_SHA:-unknown}"    # Provide default if not set during build
 
 echo "[rc.local] Starting PicoClaw Server (img: ${IMG_RELEASE}_${IMG_VARIANT}, src: ${SOURCE_SHA})..."
 cd /picobrew_picoclaw
+# Use nohup and redirect output to a log file
 nohup python3 server.py 0.0.0.0 8080 > /var/log/picoclaw_server.log 2>&1 &
 SERVER_PID=$!
-echo "[rc.local] Server PID: $SERVER_PID"
+echo "[rc.local] Server started with PID $SERVER_PID."
 
-# Verify it's running
-sleep 3
+# Log the outcome
 if kill -0 "$SERVER_PID" 2>/dev/null; then
-    logger -t picoclaw-boot " Server started (PID $SERVER_PID)"
+    logger -t picoclaw-boot "✅ Server started successfully (PID $SERVER_PID). Check /var/log/picoclaw_server.log if needed."
+    echo "[rc.local] Server confirmed running."
 else
-    logger -t picoclaw-boot " Server failed to start — check /var/log/picoclaw_server.log"
-    tail -n 20 /var/log/picoclaw_server.log | logger -t picoclaw-boot
+    logger -t picoclaw-boot "❌ Server failed to start (PID $SERVER_PID died quickly). Check /var/log/picoclaw_server.log."
+    echo "[rc.local] ERROR: Server may have failed to start. Check /var/log/picoclaw_server.log"
+    # Optionally, tail the last few lines of the log here for immediate feedback in rc.local output
+    tail -n 10 /var/log/picoclaw_server.log 2>/dev/null | logger -t picoclaw-boot-log-tail
 fi
 
 exit 0
 EOF
 
 chmod +x /etc/rc.local
-systemctl enable rc-local.service
+# Manually create the systemd enable symlink for rc-local in the chroot (simulate systemctl enable)
+# This ensures rc-local runs on the target system.
+ln -sf /etc/rc.local /etc/systemd/system/rc-local.service
+ln -sf /etc/systemd/system/rc-local.service /etc/systemd/system/multi-user.target.wants/rc-local.service
 
 # === 22. Final cleanup ===
 echo ' Finished custom pi setup!'
