@@ -256,7 +256,9 @@ update-rc.d dnsmasq defaults
 # === 16. wpa_supplicant config loader (from /boot) ===
 # ... (existing content for update_wpa_supplicant.service) ...
 # This service is enabled later, which is fine as it's a custom one.
-systemctl enable update_wpa_supplicant.service # This is okay as it's our custom service created here.
+# Manually create the systemd enable symlink for update_wpa_supplicant.service in the chroot
+# This simulates 'systemctl enable' for the custom service within the build environment.
+ln -sf /etc/systemd/system/update_wpa_supplicant.service /etc/systemd/system/multi-user.target.wants/update_wpa_supplicant.service
 
 # === 17. Hosts file ===
 cat >> /etc/hosts <<EOF
