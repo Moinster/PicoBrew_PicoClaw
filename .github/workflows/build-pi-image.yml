@@ -64,11 +64,11 @@ jobs:
             VARIANT="latest"
           fi
           
-          # Create config - using Bullseye (Legacy 32-bit) for Pi Zero W compatibility
-          # Bullseye is lighter than Bookworm but still fully supported
+          # Create config - using Bookworm
+          
           cat > config <<EOF
           export IMG_NAME=picobrew_picoclaw-${VARIANT}
-          export RELEASE=bullseye
+          export RELEASE=bookworm          
           export DEPLOY_ZIP=1
           export LOCALE_DEFAULT=en_US.UTF-8
           export TARGET_HOSTNAME=picoclaw
