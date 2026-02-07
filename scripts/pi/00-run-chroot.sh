@@ -172,6 +172,11 @@ bridge=br0
 EOF
 chmod 600 /etc/hostapd/hostapd.conf
 
+# Bookworm requires /etc/default/hostapd to exist
+cat > /etc/default/hostapd <<EOF
+DAEMON_CONF="/etc/hostapd/hostapd.conf"
+EOF
+
 # === 11. Instance-based accesspoint@.service (runs on target) ===
 cat > /etc/systemd/system/accesspoint@.service <<EOF
 [Unit]
@@ -247,9 +252,14 @@ net.ipv6.conf.eth0.disable_ipv6=1
 EOF
 sysctl -p >/dev/null 2>&1
 
-# === 15. Disable resolved stub listener ===
+# === 15. systemd-resolved (Bookworm-safe) ===
 sed -i 's/^#*DNSStubListener=.*/DNSStubListener=no/' /etc/systemd/resolved.conf
-ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+
+# Use resolved-managed resolv.conf (NOT stub, not runtime)
+ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+
+systemctl enable systemd-resolved
+
 
 # === 16. wpa_supplicant config loader (runs on target) ===
 cat > /etc/systemd/system/update_wpa_supplicant.service <<EOF
