@@ -17,6 +17,9 @@ GIT_REPO="${GIT_REPO:-https://github.com/Moinster/PicoBrew_PicoClaw.git}"
 # === 1. Disable first-boot wizard (if present in Bookworm image) ===
 echo 'Disabling first-boot wizard (if applicable)...'
 systemctl disable userconfig.service || true
+systemctl disable networking.service || true
+systemctl mask networking.service || true
+systemctl enable systemd-networkd systemd-resolved
 systemctl mask userconfig.service || true
 rm -f /etc/xdg/autostart/piwiz.desktop || true
 rm -f /etc/systemd/system/getty@tty1.service.d/autologin.conf || true
@@ -128,15 +131,29 @@ Name=br0
 Kind=bridge
 EOF
 
+cat > /etc/systemd/network/03-br0.network <<EOF
+[Match]
+Name=br0
+
+[Network]
+Address=${AP_IP}/24
+IPForward=yes
+IPMasquerade=yes
+DHCPServer=no
+EOF
+
+
 # 9.2 wlan0 joins bridge (STA interface)
 cat > /etc/systemd/network/08-wlan0.network <<EOF
 [Match]
 Name=wlan0
+
 [Network]
 Bridge=br0
+DHCP=yes
+IPv6AcceptRA=no
 LLMNR=no
 MulticastDNS=no
-IPForward=yes
 EOF
 
 # 9.3 eth0 (optional wired client) joins bridge
@@ -182,22 +199,20 @@ EOF
 cat > /etc/systemd/system/accesspoint@.service <<EOF
 [Unit]
 Description=Access point for %I
-Wants=wpa_supplicant@%i.service
-After=systemd-networkd.service
-Before=dnsmasq.service
+After=sys-subsystem-net-devices-%i.device systemd-networkd.service
+Requires=sys-subsystem-net-devices-%i.device
+Wants=br0.network
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# Ensure wlan0 is up before attempting to create the virtual AP interface
-ExecStartPre=/bin/sh -c 'ip link set %i up && sleep 2'
-ExecStartPre=/sbin/iw dev %i interface add ap@%i type __ap
+ExecStartPre=/bin/ip link set %i up
+ExecStartPre=/usr/sbin/iw dev %i interface add ap@%i type __ap
 ExecStart=/usr/sbin/hostapd -i ap@%i /etc/hostapd/hostapd.conf
-ExecStopPost=-/sbin/iw dev ap@%i del
-ExecStopPost=/usr/sbin/rfkill unblock wlan
+ExecStopPost=-/usr/sbin/iw dev ap@%i del
 
 [Install]
-WantedBy=sys-subsystem-net-devices-%i.device
+WantedBy=multi-user.target
 EOF
 
 # Mask the default hostapd.service to prevent conflicts
@@ -208,12 +223,11 @@ systemctl mask hostapd.service 2>/dev/null || true
 mkdir -p /etc/systemd/system/wpa_supplicant@wlan0.service.d
 cat > /etc/systemd/system/wpa_supplicant@wlan0.service.d/override.conf <<EOF
 [Unit]
+Before=accesspoint@wlan0.service
 BindsTo=accesspoint@wlan0.service
-After=accesspoint@wlan0.service
 
 [Service]
-ExecStartPost=/bin/ip link set ap@wlan0 up
-ExecStartPost=/usr/sbin/rfkill unblock wlan
+ExecStartPost=/usr/bin/rfkill unblock wlan
 EOF
 # Do NOT enable wpa_supplicant@wlan0.service here in chroot
 
@@ -236,8 +250,8 @@ EOF
 mkdir -p /etc/systemd/system/dnsmasq.service.d
 cat > /etc/systemd/system/dnsmasq.service.d/override.conf <<EOF
 [Unit]
-After=accesspoint@wlan0.service br0.network
-Requires=accesspoint@wlan0.service
+After=br0.network accesspoint@wlan0.service
+Requires=br0.network accesspoint@wlan0.service
 EOF
 
 # Enable dnsmasq for SysV compatibility in the final image using update-rc.d (safe in chroot)
@@ -281,6 +295,11 @@ EOF
 # Enable update_wpa_supplicant.service for the target system.
 # Simulate systemctl enable using symlinks in chroot.
 ln -sf /etc/systemd/system/update_wpa_supplicant.service /etc/systemd/system/multi-user.target.wants/update_wpa_supplicant.service
+
+# === 16.5 Enable networking services for target boot ===
+systemctl enable wpa_supplicant@wlan0
+systemctl enable accesspoint@wlan0
+systemctl enable dnsmasq
 
 # === 17. Hosts file ===
 cat >> /etc/hosts <<EOF
@@ -393,6 +412,24 @@ if [ ! -f /picobrew_picoclaw/config.yaml ]; then
     fi
 fi
 
+VENV_DIR="/opt/picoclaw-venv"
+FIRST_BOOT_VENV="/var/lib/picoclaw_venv_ready"
+
+if [ ! -f "$FIRST_BOOT_VENV" ]; then
+    echo "[rc.local] Creating Python virtualenv..."
+    python3 -m venv "$VENV_DIR"
+
+    echo "[rc.local] Upgrading pip..."
+    "$VENV_DIR/bin/pip" install --upgrade pip
+
+    echo "[rc.local] Installing Python requirements..."
+    "$VENV_DIR/bin/pip" install --no-cache-dir -r /picobrew_picoclaw/requirements.txt
+
+    touch "$FIRST_BOOT_VENV"
+    echo "[rc.local] Virtualenv ready."
+fi
+
+
 # Ensure systemd manager configuration is up-to-date (optional, might help in rare cases)
 systemctl daemon-reload 2>/dev/null || true # Ignore errors in rc.local if systemctl unavailable momentarily
 
@@ -447,7 +484,9 @@ export SOURCE_SHA="${GIT_SHA:-unknown}"    # Provide default if not set during b
 echo "[rc.local] Starting PicoClaw Server (img: ${IMG_RELEASE}_${IMG_VARIANT}, src: ${SOURCE_SHA})..."
 cd /picobrew_picoclaw
 # Use nohup and redirect output to a log file
-nohup python3 server.py 0.0.0.0 8080 > /var/log/picoclaw_server.log 2>&1 &
+#nohup python3 server.py 0.0.0.0 8080 > /var/log/picoclaw_server.log 2>&1 &
+"$VENV_DIR/bin/python" /picobrew_picoclaw/server.py 0.0.0.0 8080 \
+  > /var/log/picoclaw_server.log 2>&1 &
 SERVER_PID=$!
 echo "[rc.local] Server started with PID $SERVER_PID."
 
