@@ -16,11 +16,8 @@ GIT_REPO="${GIT_REPO:-https://github.com/Moinster/PicoBrew_PicoClaw.git}"
 
 # === 1. Disable first-boot wizard (if present in Bookworm image) ===
 echo 'Disabling first-boot wizard (if applicable)...'
-systemctl disable userconfig.service || true
-systemctl disable networking.service || true
-systemctl mask networking.service || true
-systemctl enable systemd-networkd systemd-resolved
-systemctl mask userconfig.service || true
+systemctl disable userconfig.service 2>/dev/null || true
+systemctl mask userconfig.service 2>/dev/null || true
 rm -f /etc/xdg/autostart/piwiz.desktop || true
 rm -f /etc/systemd/system/getty@tty1.service.d/autologin.conf || true
 
@@ -93,7 +90,6 @@ echo 'Installing required packages...'
 apt -y install --no-install-recommends \
     libnss-resolve hostapd dnsmasq dnsutils samba git python3 python3-pip nginx openssh-server bluez
 
-systemctl enable systemd-networkd systemd-resolved
 
 # === 7. Install PicoClaw Server ===
 # PicoClaw files are copied later by pi-gen (stage files/)
@@ -273,7 +269,6 @@ sed -i 's/^#*DNSStubListener=.*/DNSStubListener=no/' /etc/systemd/resolved.conf
 # Use resolved-managed resolv.conf (NOT stub, not runtime)
 ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
 
-systemctl enable systemd-resolved
 
 
 # === 16. wpa_supplicant config loader (runs on target) ===
@@ -296,10 +291,7 @@ EOF
 # Simulate systemctl enable using symlinks in chroot.
 ln -sf /etc/systemd/system/update_wpa_supplicant.service /etc/systemd/system/multi-user.target.wants/update_wpa_supplicant.service
 
-# === 16.5 Enable networking services for target boot ===
-systemctl enable wpa_supplicant@wlan0
-systemctl enable accesspoint@wlan0
-systemctl enable dnsmasq
+
 
 # === 17. Hosts file ===
 cat >> /etc/hosts <<EOF
@@ -400,6 +392,18 @@ cat > /etc/rc.local <<'EOF'
 set -e # Exit on any error
 
 echo "[rc.local] Starting PicoClaw post-boot sequence..."
+
+systemctl enable systemd-networkd || true
+systemctl enable systemd-resolved || true
+systemctl enable wpa_supplicant@wlan0 || true
+systemctl enable accesspoint@wlan0 || true
+systemctl enable dnsmasq || true
+
+systemctl start systemd-networkd || true
+systemctl start systemd-resolved || true
+systemctl start wpa_supplicant@wlan0 || true
+systemctl start accesspoint@wlan0 || true
+systemctl start dnsmasq || true
 
 # Ensure config.yaml exists
 if [ ! -f /picobrew_picoclaw/config.yaml ]; then
