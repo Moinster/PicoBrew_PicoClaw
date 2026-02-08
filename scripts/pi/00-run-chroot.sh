@@ -88,7 +88,10 @@ apt-mark hold \
 echo 'Installing required packages...'
 # Use --no-install-recommends for network-related packages to avoid potential faulty deps like crda
 apt -y install --no-install-recommends \
-    libnss-resolve hostapd dnsmasq dnsutils samba git python3 python3-pip nginx openssh-server bluez
+    libnss-resolve hostapd dnsmasq dnsutils samba git \
+    python3 python3-venv python3-full \
+    nginx openssh-server bluez
+
 
 
 # === 7. Install PicoClaw Server ===
@@ -108,9 +111,7 @@ extra-index-url=https://pypi.org/simple
 trusted-host = www.piwheels.org pypi.org
 EOF
 
-pip3 install --upgrade pip
-pip3 cache purge
-pip3 install -r requirements.txt
+
 
 # Optional: force-reinstall known problematic packages (if still seeing illegal instr later)
 # pip3 uninstall -y eventlet flask-socketio requests
@@ -291,6 +292,23 @@ EOF
 # Simulate systemctl enable using symlinks in chroot.
 ln -sf /etc/systemd/system/update_wpa_supplicant.service /etc/systemd/system/multi-user.target.wants/update_wpa_supplicant.service
 
+# === 16.2 enablements ===
+
+ln -sf /lib/systemd/system/systemd-networkd.service \
+  /etc/systemd/system/multi-user.target.wants/systemd-networkd.service
+
+ln -sf /lib/systemd/system/systemd-resolved.service \
+  /etc/systemd/system/multi-user.target.wants/systemd-resolved.service
+
+ln -sf /etc/systemd/system/accesspoint@.service \
+  /etc/systemd/system/multi-user.target.wants/accesspoint@wlan0.service
+
+ln -sf /lib/systemd/system/wpa_supplicant@.service \
+  /etc/systemd/system/multi-user.target.wants/wpa_supplicant@wlan0.service
+
+ln -sf /lib/systemd/system/dnsmasq.service \
+  /etc/systemd/system/multi-user.target.wants/dnsmasq.service
+
 
 
 # === 17. Hosts file ===
@@ -393,11 +411,6 @@ set -e # Exit on any error
 
 echo "[rc.local] Starting PicoClaw post-boot sequence..."
 
-systemctl enable systemd-networkd || true
-systemctl enable systemd-resolved || true
-systemctl enable wpa_supplicant@wlan0 || true
-systemctl enable accesspoint@wlan0 || true
-systemctl enable dnsmasq || true
 
 systemctl start systemd-networkd || true
 systemctl start systemd-resolved || true
@@ -417,21 +430,16 @@ if [ ! -f /picobrew_picoclaw/config.yaml ]; then
 fi
 
 VENV_DIR="/opt/picoclaw-venv"
-FIRST_BOOT_VENV="/var/lib/picoclaw_venv_ready"
+MARKER="/var/lib/picoclaw_venv_ready"
 
-if [ ! -f "$FIRST_BOOT_VENV" ]; then
-    echo "[rc.local] Creating Python virtualenv..."
+if [ ! -f "$MARKER" ]; then
+    echo "[rc.local] Initializing Python runtime..."
     python3 -m venv "$VENV_DIR"
-
-    echo "[rc.local] Upgrading pip..."
-    "$VENV_DIR/bin/pip" install --upgrade pip
-
-    echo "[rc.local] Installing Python requirements..."
+    "$VENV_DIR/bin/pip" install --upgrade pip setuptools wheel
     "$VENV_DIR/bin/pip" install --no-cache-dir -r /picobrew_picoclaw/requirements.txt
-
-    touch "$FIRST_BOOT_VENV"
-    echo "[rc.local] Virtualenv ready."
+    touch "$MARKER"
 fi
+
 
 
 # Ensure systemd manager configuration is up-to-date (optional, might help in rare cases)
@@ -451,8 +459,6 @@ if [ ! -f "$FIRST_BOOT_MARKER" ]; then
     echo "[rc.local] First boot detected. Verifying Python packages..."
     cd /picobrew_picoclaw
     # Purge pip cache and force reinstall requirements from piwheels
-    sudo -u pi pip3 cache purge
-    sudo -u pi pip3 install --no-cache-dir --force-reinstall -r requirements.txt
     # Create marker file to prevent reinstall on subsequent boots
     touch "$FIRST_BOOT_MARKER"
     echo "[rc.local] Python packages verified/reinstalled."
