@@ -66,6 +66,19 @@ systemctl disable apt-daily.timer apt-daily-upgrade.timer
 # The old stable/latest logic for firmware-brcm80211 is removed.
 # Bookworm's default firmware should be sufficient for Pi Zero W AP mode.
 
+# --------------------------------------------------
+# Prevent services from starting during chrooted apt installs
+# --------------------------------------------------
+echo "Disabling service autostart in chroot..."
+cat << 'EOF' > /usr/sbin/policy-rc.d
+#!/bin/sh
+exit 101
+EOF
+chmod +x /usr/sbin/policy-rc.d
+
+export DEBIAN_FRONTEND=noninteractive
+
+
 # === 6. Update & install core packages — REMOVE dhcpcd5! ===
 echo 'Updating packages...'
 export DEBIAN_FRONTEND=noninteractive
