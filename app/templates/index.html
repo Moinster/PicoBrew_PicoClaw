@@ -138,6 +138,7 @@
             </div>
           </div>
           <!-- Fermentation Status Panel -->
+          {% set ferm_status = ferm_session.fermentation_status %}
           <div class="row mt-3" id="ferm_status_panel_{{ferm_session.uid}}" {% if not ferm_session.active %}style="display:none;"{% endif %}>
             <div class="col-12">
               <div class="card bg-secondary">
@@ -146,21 +147,23 @@
                     <div class="col-md-3">
                       <small class="text-white-50">Progress</small>
                       <div class="progress" style="height: 20px;">
-                        <div class="progress-bar bg-success" role="progressbar" id="ferm_progress_{{ferm_session.uid}}" 
-                             style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                        {% set progress = ferm_status.progress_percent|default(0) if ferm_status.can_estimate else 0 %}
+                        <div class="progress-bar {% if progress >= 100 %}bg-success{% elif progress >= 75 %}bg-warning{% else %}bg-info{% endif %}" 
+                             role="progressbar" id="ferm_progress_{{ferm_session.uid}}" 
+                             style="width: {{progress}}%;" aria-valuenow="{{progress}}" aria-valuemin="0" aria-valuemax="100">{{progress|round|int}}%</div>
                       </div>
                     </div>
                     <div class="col-md-3">
                       <small class="text-white-50">Est. Completion</small>
-                      <div id="ferm_est_completion_{{ferm_session.uid}}">Calculating...</div>
+                      <div id="ferm_est_completion_{{ferm_session.uid}}">{% if ferm_status.can_estimate and ferm_status.estimated_completion %}{{ferm_status.estimated_completion}}{% else %}Calculating...{% endif %}</div>
                     </div>
                     <div class="col-md-3">
                       <small class="text-white-50">Est. Days</small>
-                      <div id="ferm_est_days_{{ferm_session.uid}}">--</div>
+                      <div id="ferm_est_days_{{ferm_session.uid}}">{% if ferm_status.can_estimate and ferm_status.estimated_min_days %}{{ferm_status.estimated_min_days}} - {{ferm_status.estimated_max_days}} days{% else %}--{% endif %}</div>
                     </div>
                     <div class="col-md-3">
                       <small class="text-white-50">Status</small>
-                      <div id="ferm_recommendation_{{ferm_session.uid}}">Waiting for data...</div>
+                      <div id="ferm_recommendation_{{ferm_session.uid}}">{% if ferm_status.recommendation %}{{ferm_status.recommendation}}{% else %}Waiting for data...{% endif %}</div>
                     </div>
                   </div>
                 </div>
