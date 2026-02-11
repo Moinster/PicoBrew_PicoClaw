@@ -68,7 +68,8 @@ def _parse_time(time_val) -> Optional[datetime]:
     Handles:
     - datetime objects (returned as-is)
     - ISO format strings
-    - Unix timestamps (float/int)
+    - Unix timestamps in seconds (float/int)
+    - Unix timestamps in milliseconds (float/int > 1e11)
     """
     if time_val is None:
         return None
@@ -84,6 +85,10 @@ def _parse_time(time_val) -> Optional[datetime]:
     
     if isinstance(time_val, (int, float)):
         try:
+            # Detect milliseconds: timestamps > 1e11 are definitely in milliseconds
+            # (1e11 seconds = year 5138, so any reasonable timestamp above this is ms)
+            if time_val > 1e11:
+                time_val = time_val / 1000.0
             return datetime.fromtimestamp(time_val)
         except:
             return None

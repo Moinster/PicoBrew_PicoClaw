@@ -45,33 +45,46 @@ jobs:
           sudo apt-get install -y coreutils quilt parted qemu-user-static \
             debootstrap zerofree zip dosfstools libarchive-tools libcap2-bin \
             grep rsync xz-utils file git curl bc dos2unix arch-test qemu-utils
-          # arch-test is checked by pi-gen but not strictly required for arm builds
-          # We'll skip the dependency check since QEMU handles cross-compilation
 
-      - name: Clone pi-gen
+      - name: Clone pi-gen (Buster)
         run: |
-          # Use the bookworm branch - main branch is for Bookworm and has incompatible package names
-          git clone --depth 1 --branch bookworm https://github.com/RPi-Distro/pi-gen.git  
+          # Clone pi-gen and checkout the Buster release tag
+          # Buster is required for reliable WiFi AP+Client mode on PicoBrew devices
+          git clone https://github.com/RPi-Distro/pi-gen.git
+          cd pi-gen
+          git checkout tags/2020-12-02-raspbian-buster -b buster-picobrew
 
-
+      - name: Configure Buster snapshot repositories
+        run: |
+          cd pi-gen
+          
+          # Buster is archived, so we must use snapshot repositories
+          # Update sources.list to use Raspbian snapshot
+          echo "deb http://snapshot.raspbian.org/202012010638/raspbian/ buster main contrib non-free rpi" \
+            > stage0/00-configure-apt/files/sources.list
+          
+          # Update raspi.list for Raspberry Pi archive
+          echo "deb http://archive.raspberrypi.org/debian/ buster main" \
+            > stage0/00-configure-apt/files/raspi.list
+          
+          # Update bootstrap URL in prerun.sh
+          sed -i 's|bootstrap ${RELEASE} "${ROOTFS_DIR}" .*|bootstrap ${RELEASE} "${ROOTFS_DIR}" http://snapshot.raspbian.org/202012010638/raspbian/|' \
+            stage0/prerun.sh
 
       - name: Configure pi-gen
         run: |
           cd pi-gen
           
-          # Determine variant: from workflow input or default to latest for tag builds
-          # Using 'latest' because 'stable' downloads old 2019 Buster firmware that doesn't work on Bullseye
-          VARIANT="${{ github.event.inputs.variant || 'latest' }}"
-
+          # Determine variant: from workflow input or default to stable for tag builds
+          VARIANT="${{ github.event.inputs.variant || 'stable' }}"
           
-          # Create config - using Bookworm
-          
+          # Create config for Buster
           cat > config <<EOF
           export IMG_NAME=picobrew_picoclaw-${VARIANT}
-          export RELEASE=bookworm          
+          export RELEASE=buster
           export DEPLOY_ZIP=1
           export LOCALE_DEFAULT=en_US.UTF-8
-          export TARGET_HOSTNAME=picoclaw
+          export TARGET_HOSTNAME=raspberrypi
           export KEYBOARD_KEYMAP=us
           export KEYBOARD_LAYOUT="English (US)"
           export TIMEZONE_DEFAULT=America/New_York
@@ -86,37 +99,18 @@ jobs:
           rm -f stage2/EXPORT_NOOBS || true
           
           # Create custom stage
-          mkdir -p stage2/99-picoclaw
+          rm -rf stage2/99-picobrewserver-setup
+          mkdir -p stage2/99-picobrewserver-setup
           
           # Copy our setup script, updating the variant
           sed "s/export IMG_VARIANT=.*/export IMG_VARIANT=\"${VARIANT}\"/" \
-            ../scripts/pi/00-run-chroot.sh > stage2/99-picoclaw/00-run-chroot.sh
-          chmod +x stage2/99-picoclaw/00-run-chroot.sh
-          
-          # Update git clone URL to this repo
-          sed -i 's|https://github.com/chiefwigms/picobrew_pico.git|https://github.com/${{ github.repository }}.git|g' \
-            stage2/99-picoclaw/00-run-chroot.sh
-
-      - name: Vendor PicoClaw repo into pi-gen
-        run: |
-          cd pi-gen
-
-          # Create files directory for our custom stage
-          mkdir -p stage2/99-picoclaw/files/picobrew_picoclaw
-
-          # Rsync the repo contents into pi-gen
-          rsync -a \
-          --exclude='.git' \
-          --exclude='.github' \
-          --exclude='*.zip' \
-          ../ \
-          stage2/99-picoclaw/files/picobrew_picoclaw/
+            ../scripts/pi/00-run-chroot.sh > stage2/99-picobrewserver-setup/00-run-chroot.sh
+          chmod +x stage2/99-picobrewserver-setup/00-run-chroot.sh
 
       - name: Build image
         run: |
           cd pi-gen
-          # Skip dependency check (arch-test not available on Ubuntu, but QEMU handles cross-compile)
-          sudo SKIP_DEPS_CHECK=1 ./build.sh
+          sudo ./build.sh
 
       - name: Calculate checksums
         run: |
@@ -150,7 +144,7 @@ jobs:
             pi-gen/deploy/*.md5
             pi-gen/deploy/*.sha256
           body: |
-            ## ${{ github.ref_name }} - Bullseye Raspberry Pi Images
+            ## ${{ github.ref_name }} - Buster Raspberry Pi Images
 
             ### Purpose
 
@@ -159,6 +153,8 @@ jobs:
             If you already have a configured and working Raspberry Pi there is no need to update; doing so will reformat your SD card and lose all files. Back up all related files you want to retain from the Samba/Network Share before updating.
 
             The server when connected to WiFi should be self-updating when new server source code is released/merged by the maintaining contributors.
+
+            > **Note**: This release uses Raspbian Buster (2020-12-02) for maximum compatibility with PicoBrew devices and reliable WiFi AP+Client mode.
 
             ### Install Procedure
 
