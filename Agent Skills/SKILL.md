@@ -2,7 +2,7 @@
 name: picobrew-server
 version: 1.1.0
 description: Connect to a local PicoBrew server to monitor fermentations, view brew sessions, manage recipes, and save new recipes for Pico, Zymatic, and Z-Series devices.
-homepage: https://github.com/chiefwigms/picobrew_pico
+homepage: https://github.com/moinster/picobrew_picoclaw
 metadata:
   category: homebrewing
   emoji: 🍺
