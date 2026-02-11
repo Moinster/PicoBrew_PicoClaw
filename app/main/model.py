@@ -1,4 +1,5 @@
 from flask import current_app
+from pathlib import Path
 import requests
 import shutil
 import json
@@ -160,6 +161,8 @@ class PicoFermSession:
         self.use_conservative = True    # Use conservative (longer) time estimate
 
     def cleanup(self):
+        # Clean up metadata file first (before filepath is cleared)
+        self.cleanup_metadata()
         if self.file and self.filepath:
             self.file.close()
             shutil.move(str(self.filepath), str(ferm_archive_sessions_path()))
@@ -189,6 +192,59 @@ class PicoFermSession:
             return False
         status = self.get_fermentation_status()
         return status.get('should_complete', False)
+
+    def get_metadata_path(self):
+        """Get the path for the metadata sidecar file."""
+        if self.filepath:
+            return Path(str(self.filepath) + '.meta')
+        return None
+
+    def save_metadata(self):
+        """Save session metadata to a sidecar file for persistence across restarts."""
+        meta_path = self.get_metadata_path()
+        if meta_path:
+            metadata = {
+                'target_abv': self.target_abv,
+                'target_pressure_psi': self.target_pressure_psi,
+                'auto_complete': self.auto_complete,
+                'use_conservative': self.use_conservative,
+                'start_time': self.start_time.isoformat() if self.start_time else None,
+                'alias': self.alias,
+            }
+            try:
+                with open(meta_path, 'w') as f:
+                    json.dump(metadata, f, indent=2)
+            except Exception as e:
+                print(f"Error saving fermentation metadata: {e}")
+
+    def load_metadata(self):
+        """Load session metadata from a sidecar file."""
+        meta_path = self.get_metadata_path()
+        if meta_path and meta_path.exists():
+            try:
+                with open(meta_path, 'r') as f:
+                    metadata = json.load(f)
+                self.target_abv = metadata.get('target_abv')
+                self.target_pressure_psi = metadata.get('target_pressure_psi', 5.0)
+                self.auto_complete = metadata.get('auto_complete', True)
+                self.use_conservative = metadata.get('use_conservative', True)
+                if metadata.get('start_time'):
+                    from datetime import datetime
+                    self.start_time = datetime.fromisoformat(metadata['start_time'])
+                self.alias = metadata.get('alias', '')
+                return True
+            except Exception as e:
+                print(f"Error loading fermentation metadata: {e}")
+        return False
+
+    def cleanup_metadata(self):
+        """Remove the metadata sidecar file."""
+        meta_path = self.get_metadata_path()
+        if meta_path and meta_path.exists():
+            try:
+                meta_path.unlink()
+            except Exception:
+                pass
 
 
 class iSpindelSession:

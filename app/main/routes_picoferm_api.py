@@ -218,6 +218,9 @@ def set_fermentation_params(args):
     if 'use_conservative' in args:
         session.use_conservative = args['use_conservative']
     
+    # Persist metadata to disk so it survives restarts
+    session.save_metadata()
+    
     # Return current status
     status = session.get_fermentation_status()
     return json_dumps({
@@ -276,3 +279,5 @@ def create_new_session(uid):
     active_ferm_sessions[uid].filepath = ferm_active_sessions_path().joinpath('{0}#{1}.json'.format(active_ferm_sessions[uid].start_time.strftime('%Y%m%d_%H%M%S'), uid))
     active_ferm_sessions[uid].file = open(active_ferm_sessions[uid].filepath, 'w')
     active_ferm_sessions[uid].file.write('[')
+    # Save initial metadata (start_time) so it persists across restarts
+    active_ferm_sessions[uid].save_metadata()

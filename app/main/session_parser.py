@@ -569,6 +569,9 @@ def restore_active_ferm_sessions():
             session.uninit = False
             session.data = ferm_session['data']
             session.graph = ferm_session['graph']
+            
+            # Load metadata (target_abv, etc.) from sidecar file if it exists
+            session.load_metadata()
 
             active_ferm_sessions[uid] = session
 
