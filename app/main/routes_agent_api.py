@@ -380,7 +380,7 @@ def agent_ispindel_active():
                 'uid': uid,
                 'alias': session.alias or uid,
                 'active': session.active,
-                'start_date': session.created_at.isoformat() if session.created_at else None,
+                'start_date': session.start_time.isoformat() if session.start_time else None,
                 'current_gravity': latest_gravity,
                 'current_temp_c': latest_temp,
                 'battery_voltage': latest_battery,
