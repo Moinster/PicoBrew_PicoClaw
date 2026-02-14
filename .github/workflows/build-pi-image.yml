@@ -15,7 +15,7 @@ on:
           - stable
           - latest
       release_name:
-        description: 'Release name (e.g., beta7)'
+        description: 'Release name (e.g., beta9)'
         required: true
         default: 'beta7'
 

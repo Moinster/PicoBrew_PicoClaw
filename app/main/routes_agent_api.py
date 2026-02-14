@@ -205,15 +205,33 @@ def agent_brew_active():
     try:
         sessions = []
         for uid, session in active_brew_sessions.items():
+            # Active is determined by whether name is not 'Waiting To Brew'
+            is_active = session.name != 'Waiting To Brew'
+            
+            # Get latest data point if available
+            latest_temp = None
+            latest_step = None
+            time_remaining = None
+            if session.data and len(session.data) > 0:
+                latest = session.data[-1]
+                latest_temp = latest.get('wort') or latest.get('target')
+                if 'timeLeft' in latest:
+                    time_remaining = latest['timeLeft']
+            
             sessions.append({
                 'uid': uid,
                 'alias': session.alias or uid,
                 'name': session.name,
-                'active': session.active,
-                'session_type': session.session_type.value if session.session_type else None,
+                'active': is_active,
+                'machine_type': session.machine_type.value if session.machine_type else None,
                 'start_date': session.created_at.isoformat() if session.created_at else None,
                 'step': session.step,
                 'recovery': session.recovery,
+                'session_type': session.type,
+                'is_pico': session.is_pico,
+                'current_temp_f': latest_temp,
+                'time_remaining_seconds': time_remaining,
+                'data_points': len(session.data),
             })
         
         return jsonify({

@@ -6,7 +6,7 @@ AP_SSID="PICOBREW"
 AP_PASS="PICOBREW"
 
 export IMG_NAME="PICOBREW_PICO"
-export IMG_RELEASE="beta6"
+export IMG_RELEASE="beta9"
 # export IMG_VARIANT="stable"
 export IMG_VARIANT="latest"
 export GIT_SHA='$(git rev-parse --short HEAD)'
