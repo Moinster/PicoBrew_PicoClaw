@@ -145,6 +145,13 @@ class PicoStillSession:
 
 
 class PicoFermSession:
+    # Maximum data points to keep in memory. Older points are downsampled.
+    # At 1-min intervals this is ~2.8 days of full-resolution data.
+    # Older data is summarized (averaged per hour) to keep memory bounded.
+    MAX_DATA_POINTS = 4000
+    # When trimming, keep this many of the most recent full-resolution points
+    RECENT_POINTS_TO_KEEP = 2000
+
     def __init__(self):
         self.file = None
         self.filepath = None
@@ -154,11 +161,15 @@ class PicoFermSession:
         self.voltage = '-'
         self.start_time = None
         self.data = []
+        self._summary_data = []  # Downsampled older data points
         # Fermentation completion tracking
         self.target_abv = None          # User-specified target ABV (%)
         self.target_pressure_psi = 5.0  # Target fermentation pressure (PSI)
         self.auto_complete = True       # Auto-complete when estimated time reached
         self.use_conservative = True    # Use conservative (longer) time estimate
+        # Cached fermentation status to avoid redundant computation
+        self._cached_status = None
+        self._cache_data_len = 0
 
     def cleanup(self):
         # Clean up metadata file first (before filepath is cleared)
@@ -172,22 +183,76 @@ class PicoFermSession:
         self.voltage = '-'
         self.start_time = None
         self.data = []
+        self._summary_data = []
         self.target_abv = None
         self.target_pressure_psi = 5.0
         self.auto_complete = True
         self.use_conservative = True
+        self._cached_status = None
+        self._cache_data_len = 0
+
+    def trim_data_if_needed(self):
+        """Downsample older data points to keep memory usage bounded.
+        
+        When data exceeds MAX_DATA_POINTS, older points are averaged
+        into hourly summaries and moved to _summary_data. Only the
+        most recent RECENT_POINTS_TO_KEEP are kept at full resolution.
+        """
+        if len(self.data) <= self.MAX_DATA_POINTS:
+            return
+
+        # Split: keep recent points at full resolution, summarize the rest
+        cutoff = len(self.data) - self.RECENT_POINTS_TO_KEEP
+        old_points = self.data[:cutoff]
+        self.data = self.data[cutoff:]
+
+        # Group old points by hour and average them
+        hourly_buckets = {}
+        for p in old_points:
+            # Use hour-level granularity for bucketing
+            t = p.get('time', 0)
+            hour_key = int(t // 3600000) * 3600000  # Round to hour in millis
+            if hour_key not in hourly_buckets:
+                hourly_buckets[hour_key] = []
+            hourly_buckets[hour_key].append(p)
+
+        for hour_key in sorted(hourly_buckets.keys()):
+            bucket = hourly_buckets[hour_key]
+            avg_point = {
+                'time': sum(p.get('time', 0) for p in bucket) / len(bucket),
+                'temp': sum(p.get('temp', 0) for p in bucket) / len(bucket),
+                'pres': sum(p.get('pres', 0) for p in bucket) / len(bucket),
+            }
+            self._summary_data.append(avg_point)
+
+    def get_all_data_for_analysis(self):
+        """Return summary + recent data combined for fermentation analysis."""
+        return self._summary_data + self.data
 
     def get_fermentation_status(self):
-        """Get current fermentation status and estimates."""
+        """Get current fermentation status and estimates.
+        
+        Uses a simple cache: recalculates only when new data has arrived.
+        """
+        current_len = len(self.data) + len(self._summary_data)
+        if self._cached_status is not None and self._cache_data_len == current_len:
+            return self._cached_status
+
         from .fermentation_calculator import get_fermentation_status
-        return get_fermentation_status(
+        self._cached_status = get_fermentation_status(
             self.start_time,
             self.target_abv,
-            self.data
+            self.get_all_data_for_analysis()
         )
+        self._cache_data_len = current_len
+        return self._cached_status
 
     def should_auto_complete(self):
-        """Check if fermentation should auto-complete based on time estimates."""
+        """Check if fermentation should auto-complete based on time estimates.
+        
+        Reuses cached status from get_fermentation_status() to avoid
+        redundant computation.
+        """
         if not self.auto_complete or self.target_abv is None:
             return False
         status = self.get_fermentation_status()

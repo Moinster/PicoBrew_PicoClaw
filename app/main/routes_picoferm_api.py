@@ -141,7 +141,10 @@ def process_log_ferm_dataset(args):
     active_ferm_sessions[uid].data.extend(session_data)
     active_ferm_sessions[uid].voltage = str(args['voltage']) + 'V'
     
-    # Get fermentation status for the update
+    # Trim in-memory data to prevent unbounded memory growth on long fermentations
+    active_ferm_sessions[uid].trim_data_if_needed()
+    
+    # Get fermentation status for the update (result is cached for should_auto_complete below)
     ferm_status = active_ferm_sessions[uid].get_fermentation_status()
     
     graph_update = json_dumps({
