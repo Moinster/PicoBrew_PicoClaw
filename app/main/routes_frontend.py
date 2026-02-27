@@ -700,6 +700,8 @@ def load_active_ferm_sessions():
     ferm_sessions = []
     for uid in active_ferm_sessions:
         session = active_ferm_sessions[uid]
+        # Use get_all_data_for_analysis() to include both summary and recent data
+        all_data = session.get_all_data_for_analysis()
         ferm_sessions.append({'alias': session.alias,
                               'uid': uid,
                               'active': session.active,
@@ -709,7 +711,7 @@ def load_active_ferm_sessions():
                               'auto_complete': session.auto_complete,
                               'fermentation_status': session.get_fermentation_status(),
                               'graph': get_ferm_graph_data(uid, session.voltage,
-                                                           session.data)})
+                                                           all_data)})
     return ferm_sessions
 
 

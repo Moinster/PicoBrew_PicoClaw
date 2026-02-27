@@ -146,11 +146,12 @@ class PicoStillSession:
 
 class PicoFermSession:
     # Maximum data points to keep in memory. Older points are downsampled.
-    # At 1-min intervals this is ~2.8 days of full-resolution data.
+    # At 1-min intervals this is ~17 hours of full-resolution data.
     # Older data is summarized (averaged per hour) to keep memory bounded.
-    MAX_DATA_POINTS = 4000
+    # Tuned for Raspberry Pi with ~430MB RAM.
+    MAX_DATA_POINTS = 1000
     # When trimming, keep this many of the most recent full-resolution points
-    RECENT_POINTS_TO_KEEP = 2000
+    RECENT_POINTS_TO_KEEP = 500
 
     def __init__(self):
         self.file = None

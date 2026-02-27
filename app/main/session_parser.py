@@ -568,7 +568,12 @@ def restore_active_ferm_sessions():
 
             session.uninit = False
             session.data = ferm_session['data']
-            session.graph = ferm_session['graph']
+            # Note: we intentionally do NOT store ferm_session['graph'] on the session.
+            # The graph data is a full duplicate of all data points formatted for charting,
+            # and storing it doubles memory usage. It's regenerated on-demand when needed.
+            
+            # Trim restored data to prevent OOM on Pi with limited RAM
+            session.trim_data_if_needed()
             
             # Load metadata (target_abv, etc.) from sidecar file if it exists
             session.load_metadata()
