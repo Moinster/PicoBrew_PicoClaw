@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import shlex
@@ -5,6 +6,7 @@ import subprocess
 import sys
 import traceback
 import zipfile
+from datetime import datetime
 from flask import current_app, make_response, request, redirect, send_file
 from threading import Thread
 from time import sleep
@@ -13,10 +15,40 @@ from . import main
 from .config import base_path, recipe_path, session_path
 from .frontend_common import platform, render_template_with_defaults, system_info
 
+logger = logging.getLogger(__name__)
+
+
+def _log_dangerous_request(action):
+    """Log details about who triggered a dangerous system action."""
+    timestamp = datetime.now().isoformat()
+    remote_addr = request.remote_addr
+    user_agent = request.headers.get('User-Agent', 'unknown')
+    referer = request.headers.get('Referer', 'none')
+    method = request.method
+    msg = (f"[SYSTEM ACTION] {timestamp} - {action} triggered by "
+           f"{remote_addr} via {method} | UA: {user_agent} | Referer: {referer}")
+    logger.warning(msg)
+    # Also write to a dedicated log file for easy inspection
+    try:
+        log_path = os.path.join(base_path(), 'app', 'logs', 'system_actions.log')
+        with open(log_path, 'a') as f:
+            f.write(msg + '\n')
+    except Exception:
+        pass
+
 
 # -------- Routes --------
-@main.route('/restart_server')
+@main.route('/restart_server', methods=['GET', 'POST'])
 def restart_server():
+    # GET shows confirmation page, POST executes the action
+    if request.method == 'GET':
+        return render_template_with_defaults('confirm_action.html',
+                                             action='restart_server',
+                                             action_label='Update & Restart Server',
+                                             warning='This will pull the latest code, install requirements, and restart the server process.')
+
+    _log_dangerous_request('restart_server')
+
     # git pull & install any updated requirements
     os.system('cd {}; git pull; pip3 install -r requirements.txt'.format(base_path()))
     # TODO: Close file handles for open sessions?
@@ -33,23 +65,35 @@ def restart_server():
     return redirect('/')
 
 
-@main.route('/restart_system')
+@main.route('/restart_system', methods=['GET', 'POST'])
 def restart_system():
     if platform() != "RaspberryPi":
         return '', 404
 
+    if request.method == 'GET':
+        return render_template_with_defaults('confirm_action.html',
+                                             action='restart_system',
+                                             action_label='Restart System (Pi)',
+                                             warning='This will reboot the Raspberry Pi. The server will be unavailable until the system restarts.')
+
+    _log_dangerous_request('restart_system')
     os.system('shutdown -r now')
-    # TODO: redirect to a page with alert of restart
     return redirect('/')
 
 
-@main.route('/shutdown_system')
+@main.route('/shutdown_system', methods=['GET', 'POST'])
 def shutdown_system():
     if platform() != "RaspberryPi":
         return '', 404
 
+    if request.method == 'GET':
+        return render_template_with_defaults('confirm_action.html',
+                                             action='shutdown_system',
+                                             action_label='Shutdown System (Pi)',
+                                             warning='This will POWER OFF the Raspberry Pi. You will need physical access to turn it back on!')
+
+    _log_dangerous_request('shutdown_system')
     os.system('shutdown -h now')
-    # TODO: redirect to a page with alert of shutdown
     return redirect('/')
 
 
@@ -127,6 +171,7 @@ def setup():
             subprocess.check_output(f"hostnamectl set-hostname --static {new_hostname}", shell=True)
 
             # restart for new host settings to take effect
+            _log_dangerous_request(f'restart_system (hostname change: {old_hostname} -> {new_hostname})')
             os.system('shutdown -r now')
 
             return '', 204
