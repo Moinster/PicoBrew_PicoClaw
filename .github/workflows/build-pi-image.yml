@@ -128,7 +128,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: picoclaw-${{ github.event.inputs.variant || 'stable' }}-${{ github.event.inputs.release_name || github.ref_name }}
           path: pi-gen/deploy/*
